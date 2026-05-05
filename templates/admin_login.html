@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="pt-PT">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Dashboard admin</title>
+    <link rel="stylesheet" href="/static/styles.css">
+  </head>
+  <body>
+    <main class="page page-narrow page-center">
+      <form class="panel" method="post" action="/admin/login">
+        <p class="eyebrow">Operacoes</p>
+        <h1>Dashboard admin</h1>
+        <label class="field">
+          <span>Token de acesso</span>
+          <input type="password" name="token" required>
+        </label>
+        {{ error_html }}
+        <button class="button button-primary" type="submit">Entrar</button>
+      </form>
+    </main>
+  </body>
+</html>
