@@ -14,10 +14,10 @@ import secrets
 import smtplib
 import threading
 import time
-
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
+port = int(os.environ.get("PORT", 4000))
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 SCHEMA_PATH = BASE_DIR / "database" / "schema.sql"
