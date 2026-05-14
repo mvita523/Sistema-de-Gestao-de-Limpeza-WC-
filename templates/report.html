@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="pt-PT">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Reportar problema no WC Kimpa Vita</title>
+    <link rel="stylesheet" href="/static/styles.css">
+  </head>
+  <body>
+    <main class="page page-narrow">
+      <form class="panel" method="post" action="/report">
+        <p class="eyebrow">Universidade Kimpa Vita</p>
+        <h1>Reportar problema no WC</h1>
+
+        <label class="field">
+          <span>Localizacao ou numero do WC</span>
+          <input type="number" name="location_id" min="1" max="{{ max_location_id }}" value="{{ location_id }}" placeholder="Ex: 1" required>
+          <small>Introduz um numero entre 1 e {{ max_location_id }}.</small>
+        </label>
+
+        {{ location_html }}
+
+        <fieldset class="issue-grid">
+          <legend>Tipo de problema</legend>
+          {{ issue_options }}
+        </fieldset>
+
+        <label class="field">
+          <span>Comentario opcional</span>
+          <textarea name="description" maxlength="500" placeholder="Ex: falta papel na cabine do fundo">{{ description }}</textarea>
+        </label>
+
+        {{ error_html }}
+
+        <button class="button button-primary" type="submit">Enviar</button>
+      </form>
+    </main>
+  </body>
+</html>

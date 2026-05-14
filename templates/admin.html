@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="pt-PT">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Dashboard de limpeza WC Kimpa Vita</title>
+    <link rel="stylesheet" href="/static/styles.css">
+  </head>
+  <body>
+    <main class="page">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Operacoes</p>
+          <h1>Dashboard de limpeza WC Kimpa Vita</h1>
+        </div>
+        <form method="post" action="/admin/logout">
+          <button class="button button-secondary" type="submit">Sair</button>
+        </form>
+      </header>
+
+      {{ email_message }}
+      {{ settings_message }}
+      {{ users_message }}
+
+      <section class="stats">
+        <article><span>Reportes visiveis</span><strong>{{ visible_count }}</strong></article>
+        <article><span>Pendentes</span><strong>{{ pending_count }}</strong></article>
+        <article><span>Resolvidos</span><strong>{{ resolved_count }}</strong></article>
+      </section>
+
+      <section class="analytics">
+        <article class="panel">
+          <h2>Reportes por dia</h2>
+          {{ by_day_bars }}
+        </article>
+        <article class="panel">
+          <h2>Problemas mais frequentes</h2>
+          {{ by_issue_bars }}
+        </article>
+      </section>
+
+      <section class="panel reports">
+        <form class="filters" method="get" action="/admin">
+          <select name="status">{{ status_options }}</select>
+          <select name="location_id">{{ location_options }}</select>
+          <button class="button button-secondary" type="submit">Filtrar</button>
+        </form>
+        <form class="email-settings" method="post" action="/admin/notification-email">
+          <label>
+            <span>Email que recebe notificacoes</span>
+            <input type="email" name="notification_email" value="{{ notification_email }}" required>
+          </label>
+          <button class="button button-secondary" type="submit">Guardar email</button>
+        </form>
+        <div class="report-list">
+          {{ report_rows }}
+        </div>
+      </section>
+
+      <section class="panel users-panel">
+        <h2>Utilizadores da limpeza</h2>
+        <form class="user-form" method="post" action="/admin/cleaning-users">
+          <label>
+            <span>Nome</span>
+            <input type="text" name="name" required>
+          </label>
+          <label>
+            <span>Utilizador</span>
+            <input type="text" name="username" required>
+          </label>
+          <label>
+            <span>Email</span>
+            <input type="email" name="email" placeholder="email@exemplo.com">
+          </label>
+          <label>
+            <span>Palavra-passe</span>
+            <input type="password" name="password" minlength="6" required>
+          </label>
+          <button class="button button-secondary" type="submit">Criar utilizador</button>
+        </form>
+        <div class="user-list">
+          {{ cleaning_user_rows }}
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

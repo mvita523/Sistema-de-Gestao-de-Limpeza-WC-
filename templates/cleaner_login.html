@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="pt-PT">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Area da limpeza</title>
+    <link rel="stylesheet" href="/static/styles.css">
+  </head>
+  <body>
+    <main class="page page-narrow page-center">
+      <form class="panel" method="post" action="/cleaner/login">
+        <p class="eyebrow">Limpeza</p>
+        <h1>Entrar na area da limpeza</h1>
+        <label class="field">
+          <span>Utilizador</span>
+          <input type="text" name="username" required>
+        </label>
+        <label class="field">
+          <span>Palavra-passe</span>
+          <input type="password" name="password" required>
+        </label>
+        {{ error_html }}
+        <button class="button button-primary" type="submit">Entrar</button>
+      </form>
+    </main>
+  </body>
+</html>
