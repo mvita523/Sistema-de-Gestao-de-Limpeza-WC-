@@ -9,6 +9,7 @@
   <body>
     <main class="page page-narrow page-center">
       <form class="panel" method="post" action="/admin/login">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <p class="eyebrow">Operacoes</p>
         <h1>Dashboard admin</h1>
         <label class="field">

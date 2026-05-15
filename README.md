@@ -1,138 +1,93 @@
-# Sistema de Gestao de Limpeza de WC
+# Sistema de Gestao de Limpeza WC
 
-MVP web para reportes em tempo real via QR Code. Estudantes abrem `/report?location_id=ID`, reportam problemas sem login, e administradores acompanham tudo no dashboard.
+Aplicacao Python simples para reportar problemas em WC, gerir reportes no dashboard admin e permitir que a equipa de limpeza marque reportes como resolvidos.
 
 ## Stack
 
-- Backend: Python
-- Frontend: HTML renderizado no servidor
-- Estilos: CSS
-- Base de dados: PostgreSQL, gerivel no pgAdmin
-- Driver PostgreSQL: `psycopg2-binary`
-- Notificacoes: `print` no servidor e email opcional por Gmail para o administrador
-- Admin: token simples via `ADMIN_TOKEN`
+- Python com `ThreadingHTTPServer` e `BaseHTTPRequestHandler`
+- PostgreSQL/Supabase via `psycopg2-binary`
+- Templates HTML estaticos
+- Gmail SMTP opcional para notificacoes
 
-## Estrutura
+## Configuracao
 
-```txt
-server/app.py
-templates/
-static/styles.css
-database/schema.sql
-requirements.txt
+Crie um ficheiro local `server/.env` a partir de `.env.example` ou configure as variaveis diretamente no Render:
+
+```env
+DATABASE_URL=postgresql://user:password@host:5432/postgres?sslmode=require
+ADMIN_TOKEN=change_this_to_random_secret
+GMAIL_ADDRESS=
+GMAIL_APP_PASSWORD=
+ADMIN_EMAIL=
+PORT=4000
+AUTO_INIT_DATABASE=true
 ```
 
-## Preparar a base de dados
+`DATABASE_URL` e `ADMIN_TOKEN` sao obrigatorios. A aplicacao falha no arranque se estiverem ausentes. Se o URL PostgreSQL nao tiver `sslmode`, a aplicacao adiciona `sslmode=require` automaticamente.
 
-1. Criar uma base PostgreSQL no pgAdmin, por exemplo `wc_cleaning`.
-2. Executar o script [database/schema.sql](database/schema.sql) nessa base de dados.
-
-## Como correr
-
-Instalar a dependencia Python para ligar ao PostgreSQL:
+## Uso Local
 
 ```bash
 pip install -r requirements.txt
-```
-
-```bash
 python server/app.py
 ```
 
-No Windows, tambem podes usar:
+A aplicacao fica em `http://localhost:4000` por padrao. Nota: os cookies sao emitidos com `Secure`, como exigido para deploy; em browsers locais por HTTP, login pode exigir HTTPS ou ajuste temporario de desenvolvimento.
 
-```bash
-py server/app.py
+## Supabase
+
+1. Crie um projeto Supabase.
+2. Copie o connection string PostgreSQL.
+3. Defina `DATABASE_URL` com `sslmode=require`.
+4. Com `AUTO_INIT_DATABASE=true`, o schema idempotente em `database/schema.sql` cria tabelas, indices e dados iniciais se ainda nao existirem.
+
+O schema usa `CREATE TABLE IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS` e `ON CONFLICT DO NOTHING`, evitando operacoes destrutivas repetidas.
+
+## Deploy no Render
+
+Configure um Web Service com:
+
+- Build Command: `pip install -r requirements.txt`
+- Start Command: `python server/app.py`
+
+Ou use o `Procfile` incluido:
+
+```text
+web: python server/app.py
 ```
+
+Variaveis obrigatorias no Render:
+
+- `DATABASE_URL`
+- `ADMIN_TOKEN`
+- `PORT` e definido pelo Render automaticamente
 
 Variaveis opcionais:
 
-```env
-PORT=4000
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/wc_cleaning
-ADMIN_TOKEN=change-me
-```
+- `GMAIL_ADDRESS`
+- `GMAIL_APP_PASSWORD`
+- `ADMIN_EMAIL`
+- `AUTO_INIT_DATABASE`
+- `REPORT_RETENTION_DAYS`
 
-Podes criar um ficheiro `server/.env` com esses valores. Ajusta o utilizador, password e nome da base para ficarem iguais ao que tens no pgAdmin:
+## Endpoints
 
-```env
-PORT=4000
-DATABASE_URL=postgresql://postgres:A_TUA_PASSWORD@localhost:5432/wc_cleaning
-ADMIN_TOKEN=change-me
-```
+- `/report`: formulario publico de reporte
+- `/admin`: dashboard admin
+- `/cleaner`: area da limpeza
+- `/health`: health check JSON
+- `/api/admin/notification-email`: API protegida por bearer token admin
 
-## Notificacoes por Gmail
+## Seguranca
 
-O sistema pode enviar email quando um reporte e criado. A implementacao usa Gmail SMTP sem dependencias Python extra.
+- Sem credenciais hardcoded no codigo.
+- `DATABASE_URL` e `ADMIN_TOKEN` sao obrigatorios.
+- Cookies `HttpOnly`, `Secure`, `SameSite=Lax` e `Path=/`.
+- Sessoes admin assinadas e com expiracao.
+- Sessoes de limpeza guardadas na base de dados, com expiracao e rotacao por login.
+- Protecao CSRF em login/logout e formularios autenticados.
+- Rate limit por IP e localizacao para reportes publicos.
+- Headers de seguranca: `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, `Content-Security-Policy` e HSTS quando HTTPS.
+- Validacao de emails, usernames, passwords, descricoes, localizacoes e numero de estudante.
+- Logging estruturado sem expor passwords ou connection strings.
 
-No ficheiro `server/.env`, adiciona:
-
-```env
-GMAIL_ADDRESS=o_teu_email@gmail.com
-GMAIL_APP_PASSWORD=a_tua_app_password
-ADMIN_EMAIL=email_do_administrador@gmail.com
-```
-
-No Gmail, usa uma App Password, nao a password normal da conta. Se estes campos nao estiverem preenchidos, a app continua a funcionar sem email.
-
-O admin pode gerir varios destinatarios na seccao `Utilizadores da limpeza`: cada responsavel da limpeza tem um email e a opcao `Recebe notificacoes`. Quando um novo reporte e criado, o sistema envia a notificacao para todos os utilizadores ativos que tenham essa opcao ligada.
-
-O `ADMIN_EMAIL` fica como fallback: se nenhum utilizador da limpeza tiver email de notificacao ativo, o sistema envia para esse email.
-
-O administrador pode alterar o email que recebe notificacoes no dashboard ou via API:
-
-```http
-PATCH /api/admin/notification-email
-Authorization: Bearer change-me
-Content-Type: application/json
-
-{
-  "notification_email": "novo.admin@gmail.com"
-}
-```
-
-Para consultar o email atual:
-
-```http
-GET /api/admin/notification-email
-Authorization: Bearer change-me
-```
-
-Enderecos principais:
-
-- Reporte: `http://localhost:4000/report?location_id=1`
-- Admin: `http://localhost:4000/admin`
-- Limpeza: `http://localhost:4000/cleaner`
-- Healthcheck: `http://localhost:4000/health`
-
-No dashboard, introduzir o token definido em `ADMIN_TOKEN`. Se nao for definido, o token por defeito e `change-me`.
-
-## Utilizadores da limpeza
-
-O administrador gere os responsaveis da limpeza no dashboard admin. Na seccao `Utilizadores da limpeza`, pode criar utilizadores com nome, utilizador, email e palavra-passe, editar os emails que recebem notificacoes, ou eliminar utilizadores existentes.
-
-Os responsaveis da limpeza entram em:
-
-```txt
-http://localhost:4000/cleaner
-```
-
-Depois do login, veem apenas os reportes pendentes e podem marcar cada reporte como resolvido. Esta area nao permite gerir emails, estatisticas ou utilizadores.
-
-## Logica do QR Code
-
-Cada WC recebe um QR Code com um link unico:
-
-```txt
-https://dominio-da-universidade.pt/report?location_id=1
-```
-
-A pagina le `location_id` da URL no servidor e mostra a localizacao correspondente.
-
-## Anti-spam simples
-
-O servidor bloqueia novos envios durante 60 segundos para o mesmo par IP/localizacao.
-
-## Limpeza automatica
-
-Os reportes criados pelo formulario sao eliminados automaticamente quando tiverem mais de 15 dias. Isto limpa os dados guardados em `reports`, incluindo numero do WC, tipo de problema, comentario, estado e datas. As localizacoes dos WC ficam preservadas.

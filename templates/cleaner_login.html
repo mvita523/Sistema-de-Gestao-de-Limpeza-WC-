@@ -9,6 +9,7 @@
   <body>
     <main class="page page-narrow page-center">
       <form class="panel" method="post" action="/cleaner/login">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <p class="eyebrow">Limpeza</p>
         <h1>Entrar na area da limpeza</h1>
         <label class="field">

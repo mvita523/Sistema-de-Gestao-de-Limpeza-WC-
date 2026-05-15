@@ -1,4 +1,1 @@
-python -m uvicorn server.app:app --host 0.0.0.0 --port ${PORT:-4000}
-
-
-
+python server/app.py
