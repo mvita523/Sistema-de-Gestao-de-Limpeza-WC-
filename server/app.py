@@ -65,7 +65,7 @@ load_env_file()
 ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "change-me")
 DATABASE_URL = os.environ.get(
     "DATABASE_URL",
-    "postgresql://postgres:123456@localhost:5432/Sistema_WC",
+    "postgresql://postgres:kimpa1017107@db.gkxtnwmpatbaeqeulujk.supabase.co:5432/postgres",
 )
 PORT = int(os.environ.get("PORT", "4000"))
 GMAIL_ADDRESS = os.environ.get("GMAIL_ADDRESS", "")
