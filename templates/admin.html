@@ -109,11 +109,14 @@
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
         const ratio = window.devicePixelRatio || 1;
-        const width = canvas.clientWidth || canvas.parentElement.clientWidth;
-        const height = Number(canvas.getAttribute('height')) || 220;
+        const width = canvas.parentElement.offsetWidth;
+        const height = 220;
+        ctx.setTransform(1, 0, 0, 1, 0, 0); // reset total
         canvas.width = width * ratio;
         canvas.height = height * ratio;
-        ctx.scale(ratio, ratio);
+        canvas.style.width = width + 'px';
+        canvas.style.height = height + 'px';
+        ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
         ctx.clearRect(0, 0, width, height);
 
         if (!rows.length) {
@@ -182,7 +185,12 @@
     });
 });
 
-window.addEventListener('resize', renderCharts);
+let resizeTimer;
+
+window.addEventListener('resize', function () {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(renderCharts, 200);
+});
     </script>
   </body>
 </html>
