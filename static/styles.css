@@ -41,9 +41,9 @@ textarea {
 }
 
 .page {
-  width: min(1120px, 100%);
+  max-width: 1200px;
   margin: 0 auto;
-  padding: 28px 16px;
+  padding: 24px;
 }
 
 .page-narrow {
@@ -286,7 +286,9 @@ textarea:focus {
 }
 
 .stats-four {
+  display: grid;
   grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
 }
 
 .stats article {
@@ -308,16 +310,16 @@ textarea:focus {
   font-size: 2rem;
 }
 
-.analytics,
-.panel,
-.chart-canvas {
-  max-width: 100%;
-  overflow: hidden;
+.analytics {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 24px;
 }
 
 .chart-canvas {
-  display: block;
   width: 100%;
+  height: 220px;
+  display: block;
 }
 
 body,
@@ -561,31 +563,47 @@ html {
 }
 
 @media (max-width: 760px) {
-.analytics {
-  grid-template-columns: 1fr;
-}
-
-.page {
-  padding: 12px;
-}
+  .page {
+    padding: 12px;
   }
 
   .topbar {
+    flex-direction: column;
     align-items: stretch;
+    gap: 12px;
   }
 
-  .stats,
-  .stats-four,
+  .stats-four {
+    grid-template-columns: 1fr 1fr;
+  }
+
   .analytics,
   .filters,
   .email-settings,
   .user-form,
   .user-row,
-  .user-email-form {
+  .user-email-form,
+  .report-row {
     grid-template-columns: 1fr;
+  }
+
+  .chart-canvas {
+    width: 100%;
+    max-width: 100%;
+    height: 220px;
+    display: block;
+  }
+
+  .resolve-evidence {
+    min-width: auto;
   }
 
   .check-field {
     white-space: normal;
   }
 
+  html,
+  body {
+    overflow-x: hidden;
+  }
+}
