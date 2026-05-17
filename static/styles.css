@@ -391,18 +391,19 @@ html {
 
 .filters {
   display: grid;
-  grid-template-columns: 180px 1fr auto;
+  grid-template-columns: 220px 1fr 180px;
   gap: 12px;
   padding: 16px;
   border-bottom: 1px solid var(--border);
+  align-items: center;
 }
 
 .email-settings {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 1fr 220px;
   gap: 12px;
   align-items: end;
-  padding: 0 16px 16px;
+  padding: 16px;
   border-bottom: 1px solid var(--border);
 }
 
@@ -419,7 +420,7 @@ html {
 
 .user-form {
   display: grid;
-  grid-template-columns: repeat(4, 1fr) auto;
+  grid-template-columns: 1fr 1fr 1.5fr 1fr auto;
   gap: 12px;
   align-items: end;
 }
@@ -438,8 +439,8 @@ html {
 
 .user-row {
   display: grid;
-  grid-template-columns: 1fr minmax(360px, 1.4fr) auto;
-  gap: 16px;
+  grid-template-columns: 180px 120px 1.5fr auto auto auto;
+  gap: 12px;
   align-items: center;
   padding: 14px 0;
   border-bottom: 1px solid #edf2f7;
@@ -455,10 +456,7 @@ html {
 }
 
 .user-email-form {
-  display: grid;
-  grid-template-columns: 1fr auto auto;
-  gap: 10px;
-  align-items: center;
+  display: contents;
 }
 
 .check-field {
@@ -479,22 +477,24 @@ html {
 .report-row {
   display: grid;
   grid-template-columns: 1fr auto;
-  gap: 16px;
+  gap: 20px;
   align-items: center;
   padding: 18px;
   border-bottom: 1px solid #edf2f7;
 }
 
 .report-actions {
-  display: grid;
+  display: flex;
   gap: 10px;
-  justify-items: stretch;
+  align-items: center;
+  flex-wrap: nowrap;
 }
 
 .resolve-evidence {
-  display: grid;
-  gap: 8px;
-  min-width: 220px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  min-width: auto;
 }
 
 .resolve-evidence input {
@@ -565,19 +565,6 @@ html {
 }
 
 @media (max-width: 760px) {
-  .chart-canvas {
-    width: 100%;
-    height: 160px;
-  }
-
-  .panel {
-    padding: 12px;
-  }
-
-  .analytics {
-    gap: 10px;
-  }
-}
   .topbar {
     flex-direction: column;
     align-items: stretch;
@@ -590,26 +577,27 @@ html {
 
   .filters,
   .email-settings,
-  .user-form,
-  .user-row,
-  .user-email-form,
   .report-row {
     grid-template-columns: 1fr;
   }
 
+  .report-actions,
+  .resolve-evidence {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
   .chart-canvas {
     width: 100%;
-    max-width: 100%;
-    height: 220px;
-    display: block;
+    height: 160px;
   }
 
-  .resolve-evidence {
-    min-width: auto;
+  .panel {
+    padding: 12px;
   }
 
-  .check-field {
-    white-space: normal;
+  .analytics {
+    gap: 10px;
   }
 
   html,
