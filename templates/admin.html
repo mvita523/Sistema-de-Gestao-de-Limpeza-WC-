@@ -109,13 +109,18 @@
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
         const ratio = window.devicePixelRatio || 1;
-        const width = canvas.parentElement.offsetWidth;
+        const width = Math.min(canvas.parentElement.clientWidth, window.innerWidth - 40);
         const height = 220;
-        ctx.setTransform(1, 0, 0, 1, 0, 0); // reset total
+
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+
         canvas.width = width * ratio;
         canvas.height = height * ratio;
-        canvas.style.width = width + 'px';
+
+        canvas.style.width = '100%';
+        canvas.style.maxWidth = '100%';
         canvas.style.height = height + 'px';
+        
         ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
         ctx.clearRect(0, 0, width, height);
 
