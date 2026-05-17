@@ -102,7 +102,7 @@
       </section>
     </main>
     <script>
-      const dashboardCharts = { chart_payload };
+      const dashboardCharts = JSON.parse('{{ chart_payload }}');
 
       function drawBarChart(canvasId, rows, color) {
         const canvas = document.getElementById(canvasId);
