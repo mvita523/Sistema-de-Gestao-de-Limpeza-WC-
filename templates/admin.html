@@ -109,7 +109,7 @@
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
         const ratio = window.devicePixelRatio || 1;
-        const width = canvas.clientWidth || canvas.parentElement.clientWidth;
+        const width = canvas.parentElement.offsetWidth;
         const height = Number(canvas.getAttribute('height')) || 220;
         canvas.width = width * ratio;
         canvas.height = height * ratio;
@@ -156,12 +156,13 @@
         });
       }
 
-      function renderCharts() {
-        drawBarChart('dayChart', dashboardCharts.byDay, '#2563eb');
-        drawBarChart('issueChart', dashboardCharts.byIssue, '#0f766e');
-        drawBarChart('categoryChart', dashboardCharts.byCategory, '#b45309');
-      }
-
+    function renderCharts() {
+    setTimeout(() => {
+        drawBarChart('dayChart', dashboardCharts.byDay || [], '#2563eb');
+        drawBarChart('issueChart', dashboardCharts.byIssue || [], '#0f766e');
+        drawBarChart('categoryChart', dashboardCharts.byCategory || [], '#b45309');
+    }, 100);
+}
       document.addEventListener('DOMContentLoaded', function () {
     renderCharts();
 
