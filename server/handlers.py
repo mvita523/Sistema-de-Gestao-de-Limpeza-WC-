@@ -1,16 +1,27 @@
 import json
 import re
+import secrets
+from email.parser import BytesParser
+from email.policy import default as email_policy
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler
+from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import psycopg2
 
 from . import auth, database, email_service
-from .config import CLEANER_SESSION_DAYS, FORM_MAX_BYTES, STATIC_DIR, logger
+from .config import CLEANER_SESSION_DAYS, FORM_MAX_BYTES, STATIC_DIR, UPLOAD_DIR, UPLOAD_MAX_BYTES, logger
 from .utils import (
+    ALLOWED_IMAGE_EXTENSIONS,
+    ALLOWED_IMAGE_TYPES,
+    COURSE_OPTIONS,
     ISSUE_LABELS,
+    LOCAL_CATEGORY_LABELS,
+    LOCAL_SUBCATEGORY_OPTIONS,
+    PERIOD_LABELS,
     STATUS_LABELS,
+    USER_CATEGORY_LABELS,
     SubmissionRateLimiter,
     clean_text,
     day_key,
@@ -18,7 +29,6 @@ from .utils import (
     format_datetime,
     is_valid_email,
     is_valid_password,
-    is_valid_student_number,
     is_valid_username,
     redirect_target,
     render_template,
@@ -62,6 +72,8 @@ class AppHandler(BaseHTTPRequestHandler):
             return self.get_notification_email_api()
         if parsed.path == "/static/styles.css":
             return self.static_file(STATIC_DIR / "styles.css", "text/css; charset=utf-8")
+        if parsed.path.startswith("/static/uploads/"):
+            return self.uploaded_file(parsed.path)
         return self.not_found()
 
     def do_POST(self):
@@ -84,6 +96,9 @@ class AppHandler(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/admin/reports/(\d+)/resolve", parsed.path)
         if match:
             return self.resolve_report(int(match.group(1)))
+        match = re.fullmatch(r"/admin/reports/(\d+)/cancel", parsed.path)
+        if match:
+            return self.cancel_report(int(match.group(1)))
         match = re.fullmatch(r"/admin/cleaning-users/(\d+)/delete", parsed.path)
         if match:
             return self.delete_cleaning_user_form(int(match.group(1)))
@@ -108,6 +123,68 @@ class AppHandler(BaseHTTPRequestHandler):
         raw = self.rfile.read(length).decode("utf-8")
         return {key: values[0] for key, values in parse_qs(raw, keep_blank_values=True).items()}
 
+    def read_multipart_form(self):
+        length = int(self.headers.get("Content-Length", "0"))
+        content_type = self.headers.get("Content-Type", "")
+        if length > FORM_MAX_BYTES:
+            raise ValueError("Form too large")
+        if not content_type.startswith("multipart/form-data"):
+            raise ValueError("Multipart form expected")
+
+        raw_body = self.rfile.read(length)
+        raw_message = (
+            f"Content-Type: {content_type}\r\n"
+            f"Content-Length: {length}\r\n"
+            "MIME-Version: 1.0\r\n\r\n"
+        ).encode("utf-8") + raw_body
+        message = BytesParser(policy=email_policy).parsebytes(raw_message)
+        if not message.is_multipart():
+            raise ValueError("Multipart form expected")
+
+        fields = {}
+        files = {}
+        for part in message.iter_parts():
+            if part.get_content_disposition() != "form-data":
+                continue
+            name = part.get_param("name", header="content-disposition")
+            if not name:
+                continue
+            filename = part.get_filename()
+            payload = part.get_payload(decode=True) or b""
+            if filename:
+                files[name] = {
+                    "filename": filename,
+                    "content_type": (part.get_content_type() or "").lower(),
+                    "data": payload,
+                }
+            else:
+                charset = part.get_content_charset() or "utf-8"
+                fields[name] = payload.decode(charset, errors="replace")
+        return fields, files
+
+    def save_uploaded_image(self, files, field_name):
+        item = files.get(field_name)
+        if item is None or not item.get("filename"):
+            raise ValueError("missing")
+
+        extension = Path(item["filename"]).suffix.lower().lstrip(".")
+        content_type = (item.get("content_type") or "").split(";")[0].strip().lower()
+        if extension not in ALLOWED_IMAGE_EXTENSIONS or content_type not in ALLOWED_IMAGE_TYPES:
+            raise ValueError("invalid_type")
+
+        data = item.get("data") or b""
+        if not data:
+            raise ValueError("missing")
+        if len(data) > UPLOAD_MAX_BYTES:
+            raise ValueError("too_large")
+
+        UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+        filename = f"{secrets.token_urlsafe(18)}.{extension}"
+        target = UPLOAD_DIR / filename
+        with target.open("wb") as file:
+            file.write(data)
+        return f"/static/uploads/{filename}"
+
     def read_json(self):
         length = int(self.headers.get("Content-Length", "0"))
         if length > FORM_MAX_BYTES:
@@ -118,22 +195,13 @@ class AppHandler(BaseHTTPRequestHandler):
         return json.loads(raw)
 
     def show_report(self, query, error=""):
-        location_id = clean_text((query.get("location_id") or [""])[0], 20)
         selected_issue = clean_text((query.get("issue_type") or [""])[0], 20)
         description = clean_text((query.get("description") or [""])[0], 500, multiline=True)
-        student_number = clean_text((query.get("student_number") or [""])[0], 40)
-        location = database.get_location(int(location_id)) if location_id.isdigit() else None
-        max_location_id = database.get_max_location_id()
-
-        location_html = ""
-        if location:
-            location_html = (
-                '<section class="notice">'
-                f"<strong>{escape(location['name'])}</strong>"
-                f"<span>Numero da sala/WC: {escape(location['id'])}</span>"
-                f"<span>{escape(location['building'])}, piso {escape(location['floor'])}</span>"
-                "</section>"
-            )
+        categoria_utilizador = clean_text((query.get("categoria_utilizador") or [""])[0], 40)
+        categoria_local = clean_text((query.get("categoria_local") or [""])[0], 40)
+        subcategoria_local = clean_text((query.get("subcategoria_local") or [""])[0], 160)
+        curso = clean_text((query.get("curso") or [""])[0], 120)
+        periodo = clean_text((query.get("periodo") or [""])[0], 40)
 
         issue_buttons = []
         for issue_id, label in ISSUE_LABELS.items():
@@ -147,55 +215,82 @@ class AppHandler(BaseHTTPRequestHandler):
 
         body = render_template(
             "report.html",
-            location_id=escape(location_id),
-            max_location_id=escape(max_location_id),
             description=escape(description),
-            student_number=escape(student_number),
-            location_html=location_html,
             issue_options="\n".join(issue_buttons),
+            user_category_options=self.option_tags(USER_CATEGORY_LABELS.items(), categoria_utilizador),
+            local_category_options=self.option_tags(LOCAL_CATEGORY_LABELS.items(), categoria_local),
+            subcategoria_local=escape(subcategoria_local),
+            local_options_json=json.dumps(LOCAL_SUBCATEGORY_OPTIONS),
+            course_options=self.option_tags(((value, value) for value in COURSE_OPTIONS), curso),
+            period_options=self.option_tags(PERIOD_LABELS.items(), periodo),
             error_html=self.error_box(error),
         )
         return self.html_response(body)
 
     def create_report(self):
         try:
-            form = self.read_form()
+            form, files = self.read_multipart_form()
         except ValueError:
-            return self.show_report({}, "Pedido demasiado grande.")
+            return self.show_report({}, "Pedido demasiado grande ou formulario invalido.")
 
-        location_id = clean_text(form.get("location_id", ""), 20)
         issue_type = clean_text(form.get("issue_type", ""), 20)
         description = clean_text(form.get("description", ""), 500, multiline=True)
-        student_number = clean_text(form.get("student_number", ""), 40)
-        max_location_id = database.get_max_location_id()
+        categoria_utilizador = clean_text(form.get("categoria_utilizador", ""), 40)
+        categoria_local = clean_text(form.get("categoria_local", ""), 40)
+        subcategoria_local = clean_text(form.get("subcategoria_local", ""), 160)
+        curso = clean_text(form.get("curso", ""), 120)
+        periodo = clean_text(form.get("periodo", ""), 40)
+        query = {key: [value] for key, value in form.items()}
 
-        if not location_id.isdigit() or int(location_id) <= 0:
-            return self.show_report({"location_id": [location_id]}, "Indica um numero de WC valido.")
-        if int(location_id) > max_location_id:
-            return self.show_report({"location_id": [location_id]}, f"O numero do WC deve estar entre 1 e {max_location_id}.")
+        if categoria_utilizador not in USER_CATEGORY_LABELS:
+            return self.show_report(query, "Seleciona a categoria do utilizador.")
+        if categoria_local not in LOCAL_CATEGORY_LABELS:
+            return self.show_report(query, "Seleciona a categoria do local.")
+        if subcategoria_local not in LOCAL_SUBCATEGORY_OPTIONS.get(categoria_local, []):
+            return self.show_report(query, "Seleciona um local valido para a categoria escolhida.")
         if issue_type not in ISSUE_LABELS:
-            return self.show_report({"location_id": [location_id]}, "Seleciona o tipo de problema.")
-        if not is_valid_student_number(student_number):
-            return self.show_report({"location_id": [location_id]}, "Indica um numero de estudante valido.")
+            return self.show_report(query, "Seleciona o tipo de problema.")
+        if curso not in COURSE_OPTIONS:
+            return self.show_report(query, "Seleciona um curso valido.")
+        if periodo not in PERIOD_LABELS:
+            return self.show_report(query, "Seleciona o periodo.")
 
-        location = database.get_location(int(location_id))
-        if not location:
-            return self.show_report({"location_id": [location_id]}, "Localizacao nao encontrada.")
-
-        if not rate_limiter.allow(self.client_address[0], location_id):
+        if not rate_limiter.allow(self.client_address[0], subcategoria_local):
             return self.show_report(
-                {"location_id": [location_id], "issue_type": [issue_type], "description": [description], "student_number": [student_number]},
-                "Aguarde antes de enviar outro reporte para este WC.",
+                query,
+                "Aguarde antes de enviar outro reporte para este local.",
             )
 
         try:
-            report_id = database.create_report(int(location_id), issue_type, description, student_number)
+            foto_reporte = self.save_uploaded_image(files, "foto_reporte")
+        except ValueError as exc:
+            message = "Anexa uma foto valida em JPG, PNG ou WEBP."
+            if str(exc) == "too_large":
+                message = "A foto deve ter no maximo 5 MB."
+            return self.show_report(query, message)
+
+        try:
+            report_id = database.create_report(
+                issue_type,
+                description,
+                categoria_utilizador,
+                foto_reporte,
+                categoria_local,
+                subcategoria_local,
+                curso,
+                periodo,
+            )
         except psycopg2.Error:
             logger.exception("report_create_failed")
-            return self.show_report({"location_id": [location_id]}, "Nao foi possivel guardar o reporte.")
+            return self.show_report(query, "Nao foi possivel guardar o reporte.")
 
-        logger.info("report_created report_id=%s issue_type=%s location_id=%s", report_id, issue_type, location_id)
-        email_service.notify_admin_by_email(report_id, issue_type, location, description)
+        logger.info("report_created report_id=%s issue_type=%s categoria_local=%s", report_id, issue_type, categoria_local)
+        email_service.notify_admin_by_email(
+            report_id,
+            issue_type,
+            {"name": subcategoria_local, "building": LOCAL_CATEGORY_LABELS[categoria_local], "floor": periodo, "id": "-"},
+            description,
+        )
         return self.html_response(render_template("success.html"), HTTPStatus.CREATED)
 
     def show_admin(self, query):
@@ -208,7 +303,9 @@ class AppHandler(BaseHTTPRequestHandler):
         status = clean_text((query.get("status") or ["pending"])[0], 20)
         location_id = clean_text((query.get("location_id") or ["all"])[0], 20)
         reports = database.filtered_reports(status, location_id)
+        all_reports = database.filtered_reports("all", "all")
         locations = database.get_locations()
+        best_cleaner_name, best_cleaner_total = self.best_cleaner(all_reports)
         body = render_template(
             "admin.html",
             csrf_token=escape(csrf_token),
@@ -221,10 +318,19 @@ class AppHandler(BaseHTTPRequestHandler):
             location_options=self.location_options(locations, location_id),
             report_rows=self.report_rows(reports, status, location_id, csrf_token),
             visible_count=len(reports),
-            pending_count=sum(1 for report in reports if report["status"] == "pending"),
-            resolved_count=sum(1 for report in reports if report["status"] == "resolved"),
-            by_day_bars=self.bar_list(self.count_by_day(reports)),
-            by_issue_bars=self.bar_list(self.count_by_issue(reports)),
+            pending_count=sum(1 for report in all_reports if report["status"] == "pending"),
+            resolved_count=sum(1 for report in all_reports if report["status"] == "resolved"),
+            false_alert_count=sum(1 for report in all_reports if report.get("falso_alerta")),
+            best_cleaner_name=escape(best_cleaner_name),
+            best_cleaner_total=best_cleaner_total,
+            top_course=escape(self.top_course(all_reports)),
+            chart_payload=json.dumps(
+                {
+                    "byDay": self.chart_rows(self.count_by_day(all_reports)),
+                    "byIssue": self.chart_rows(self.count_by_issue(all_reports)),
+                    "byCategory": self.chart_rows(self.count_by_category(all_reports)),
+                }
+            ),
         )
         return self.html_response(body, csrf_token=csrf_token if is_new else None)
 
@@ -404,16 +510,32 @@ class AppHandler(BaseHTTPRequestHandler):
         database.resolve_report(report_id)
         return self.redirect(redirect_target("/admin", {"status": form.get("status", "pending"), "location_id": form.get("location_id", "all")}))
 
+    def cancel_report(self, report_id):
+        if not auth.valid_admin_cookie(self.headers):
+            return self.redirect("/admin")
+        form = self.safe_form_or_redirect("/admin")
+        if form is None:
+            return
+        if not auth.valid_csrf(self.headers, form):
+            return self.redirect("/admin")
+        database.cancel_report(report_id)
+        return self.redirect(redirect_target("/admin", {"status": form.get("status", "pending"), "location_id": form.get("location_id", "all")}))
+
     def resolve_report_cleaner(self, report_id):
         cleaner = database.get_cleaner_by_session(auth.get_cleaner_session_token(self.headers))
         if not cleaner:
             return self.redirect("/cleaner")
-        form = self.safe_form_or_redirect("/cleaner")
-        if form is None:
-            return
+        try:
+            form, files = self.read_multipart_form()
+        except ValueError:
+            return self.redirect("/cleaner")
         if not auth.valid_csrf(self.headers, form):
             return self.redirect("/cleaner")
-        database.resolve_report(report_id, cleaner["id"])
+        try:
+            foto_resolucao = self.save_uploaded_image(files, "foto_resolucao")
+        except ValueError:
+            return self.redirect("/cleaner")
+        database.resolve_report(report_id, cleaner["id"], foto_resolucao)
         return self.redirect("/cleaner")
 
     def safe_form_or_redirect(self, location):
@@ -453,7 +575,7 @@ class AppHandler(BaseHTTPRequestHandler):
         return '<div class="error">Credenciais invalidas.</div>' if status == "invalid" else ""
 
     def status_options(self, current):
-        options = [("all", "Todos os estados"), ("pending", "Pendentes"), ("resolved", "Resolvidos")]
+        options = [("all", "Todos os estados"), ("pending", "Pendentes"), ("resolved", "Resolvidos"), ("canceled", "Cancelados")]
         return "\n".join(f'<option value="{value}" {"selected" if value == current else ""}>{label}</option>' for value, label in options)
 
     def location_options(self, locations, current):
@@ -470,19 +592,30 @@ class AppHandler(BaseHTTPRequestHandler):
         rows = []
         for report in reports:
             description = f'<p class="description">{escape(report["description"])}</p>' if report["description"] else ""
-            student_info = f'<p class="muted">N.º estudante: {escape(report["student_number"])}</p>' if report.get("student_number") else ""
+            metadata = self.report_metadata(report)
             resolved_by_html = ""
             if report["status"] == "resolved":
                 resolved_by_html = f'<p class="muted">Resolvido por: {escape(report.get("resolved_by_name") or "Administrador")}</p>'
+            if report["status"] == "canceled":
+                resolved_by_html = '<p class="muted">Marcado como falso alerta.</p>'
+            report_photo = self.photo_link(report.get("foto_reporte"), "Ver foto do reporte")
+            resolution_photo = self.photo_link(report.get("foto_resolucao"), "Ver foto da resolucao")
             action = ""
             if report["status"] == "pending":
                 action = (
+                    '<div class="report-actions">'
                     f'<form method="post" action="/admin/reports/{report["id"]}/resolve">'
                     f'<input type="hidden" name="csrf_token" value="{escape(csrf_token)}">'
                     f'<input type="hidden" name="status" value="{escape(status)}">'
                     f'<input type="hidden" name="location_id" value="{escape(location_id)}">'
                     '<button class="button button-success" type="submit">Resolver</button>'
                     "</form>"
+                    f'<form method="post" action="/admin/reports/{report["id"]}/cancel">'
+                    f'<input type="hidden" name="csrf_token" value="{escape(csrf_token)}">'
+                    f'<input type="hidden" name="status" value="{escape(status)}">'
+                    f'<input type="hidden" name="location_id" value="{escape(location_id)}">'
+                    '<button class="button button-danger" type="submit">Cancelar</button>'
+                    "</form></div>"
                 )
             rows.append(
                 '<article class="report-row"><div><div class="badges">'
@@ -490,10 +623,10 @@ class AppHandler(BaseHTTPRequestHandler):
                 f'<span class="badge badge-blue">{escape(ISSUE_LABELS[report["issue_type"]])}</span>'
                 f'<span class="badge badge-status">{escape(STATUS_LABELS[report["status"]])}</span>'
                 "</div>"
-                f'<h2>{escape(report["location_name"])}</h2>'
-                f'<p class="room-number">Numero da sala/WC: {escape(report["location_id"])}</p>'
-                f'<p class="muted">{escape(report["building"])}, piso {escape(report["floor"])} - {format_datetime(report["created_at"])}</p>'
-                f"{student_info}{resolved_by_html}{description}</div>{action}</article>"
+                f'<h2>{escape(self.report_location_title(report))}</h2>'
+                f'<p class="room-number">{escape(self.report_location_detail(report))}</p>'
+                f'<p class="muted">{format_datetime(report["created_at"])}</p>'
+                f"{metadata}{resolved_by_html}{description}{report_photo}{resolution_photo}</div>{action}</article>"
             )
         return "\n".join(rows)
 
@@ -503,20 +636,22 @@ class AppHandler(BaseHTTPRequestHandler):
         rows = []
         for report in reports:
             description = f'<p class="description">{escape(report["description"])}</p>' if report["description"] else ""
-            student_info = f'<p class="muted">N.º estudante: {escape(report["student_number"])}</p>' if report.get("student_number") else ""
+            metadata = self.report_metadata(report)
+            report_photo = self.photo_link(report.get("foto_reporte"), "Ver foto do reporte")
             rows.append(
                 '<article class="report-row"><div><div class="badges">'
                 f'<span class="badge">#{report["id"]}</span>'
                 f'<span class="badge badge-blue">{escape(ISSUE_LABELS[report["issue_type"]])}</span>'
                 f'<span class="badge badge-status">{escape(STATUS_LABELS[report["status"]])}</span>'
                 "</div>"
-                f'<h2>{escape(report["location_name"])}</h2>'
-                f'<p class="room-number">Numero da sala/WC: {escape(report["location_id"])}</p>'
-                f'<p class="muted">{escape(report["building"])}, piso {escape(report["floor"])} - {format_datetime(report["created_at"])}</p>'
-                f"{student_info}{description}</div>"
-                f'<form method="post" action="/cleaner/reports/{report["id"]}/resolve">'
+                f'<h2>{escape(self.report_location_title(report))}</h2>'
+                f'<p class="room-number">{escape(self.report_location_detail(report))}</p>'
+                f'<p class="muted">{format_datetime(report["created_at"])}</p>'
+                f"{metadata}{description}{report_photo}</div>"
+                f'<form class="resolve-evidence" method="post" enctype="multipart/form-data" action="/cleaner/reports/{report["id"]}/resolve">'
                 f'<input type="hidden" name="csrf_token" value="{escape(csrf_token)}">'
-                '<button class="button button-success" type="submit">Marcar resolvido</button>'
+                '<input class="resolve-file" type="file" name="foto_resolucao" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" required>'
+                '<button class="button button-success resolve-button" type="submit" disabled>Resolver</button>'
                 "</form></article>"
             )
         return "\n".join(rows)
@@ -524,12 +659,16 @@ class AppHandler(BaseHTTPRequestHandler):
     def cleaning_user_rows(self, cleaning_users, csrf_token):
         if not cleaning_users:
             return '<p class="empty">Nenhum utilizador de limpeza criado.</p>'
+
         rows = []
+
         for user in cleaning_users:
             checked = "checked" if user["receives_notifications"] else ""
+
             rows.append(
                 '<article class="user-row"><div>'
                 f'<strong>{escape(user["name"])}</strong><span>{escape(user["username"])}</span></div>'
+
                 f'<form class="user-email-form" method="post" action="/admin/cleaning-users/{user["id"]}/email">'
                 f'<input type="hidden" name="csrf_token" value="{escape(csrf_token)}">'
                 f'<input type="email" name="email" value="{escape(user["email"] or "")}" placeholder="email@exemplo.com">'
@@ -537,11 +676,51 @@ class AppHandler(BaseHTTPRequestHandler):
                 f'<input type="checkbox" name="receives_notifications" {checked}>'
                 '<span>Recebe notificacoes</span></label>'
                 '<button class="button button-secondary" type="submit">Guardar</button></form>'
-                f'<form method="post" action="/admin/cleaning-users/{user["id"]}/delete">'
+
+                f'''<form method="post"
+                    action="/admin/cleaning-users/{user["id"]}/delete"
+                    onsubmit="return confirm('Tem certeza que deseja eliminar este utilizador? Esta ação não pode ser desfeita.');">'''
                 f'<input type="hidden" name="csrf_token" value="{escape(csrf_token)}">'
                 '<button class="button button-danger" type="submit">Eliminar</button></form></article>'
             )
         return "\n".join(rows)
+
+    def option_tags(self, options, current):
+        rows = []
+        for value, label in options:
+            selected = "selected" if value == current else ""
+            rows.append(f'<option value="{escape(value)}" {selected}>{escape(label)}</option>')
+        return "\n".join(rows)
+
+    def report_location_title(self, report):
+        if report.get("subcategoria_local"):
+            return report["subcategoria_local"]
+        return report.get("location_name") or "Localizacao antiga"
+
+    def report_location_detail(self, report):
+        if report.get("categoria_local"):
+            category = LOCAL_CATEGORY_LABELS.get(report["categoria_local"], report["categoria_local"])
+            return f"{category} - {report.get('periodo') or 'Periodo nao indicado'}"
+        if report.get("location_id"):
+            return f"Numero da sala/WC: {report['location_id']} - {report.get('building') or ''}, piso {report.get('floor') or ''}"
+        return "Local nao indicado"
+
+    def report_metadata(self, report):
+        parts = []
+        if report.get("categoria_utilizador"):
+            parts.append(f"Utilizador: {USER_CATEGORY_LABELS.get(report['categoria_utilizador'], report['categoria_utilizador'])}")
+        if report.get("curso"):
+            parts.append(f"Curso: {report['curso']}")
+        if report.get("periodo"):
+            parts.append(f"Periodo: {PERIOD_LABELS.get(report['periodo'], report['periodo'])}")
+        if report.get("student_number"):
+            parts.append(f"Numero de estudante: {report['student_number']}")
+        return "".join(f'<p class="muted">{escape(part)}</p>' for part in parts)
+
+    def photo_link(self, path, label):
+        if not path:
+            return ""
+        return f'<a class="report-photo" href="{escape(path)}" target="_blank" rel="noopener">{escape(label)}</a>'
 
     def count_by_day(self, reports):
         counts = {}
@@ -556,6 +735,37 @@ class AppHandler(BaseHTTPRequestHandler):
             key = ISSUE_LABELS[report["issue_type"]]
             counts[key] = counts.get(key, 0) + 1
         return sorted(counts.items(), key=lambda item: item[1], reverse=True)
+
+    def count_by_category(self, reports):
+        counts = {label: 0 for label in LOCAL_CATEGORY_LABELS.values()}
+        for report in reports:
+            key = LOCAL_CATEGORY_LABELS.get(report.get("categoria_local"))
+            if key:
+                counts[key] = counts.get(key, 0) + 1
+        return sorted(counts.items(), key=lambda item: item[1], reverse=True)
+
+    def top_course(self, reports):
+        counts = {}
+        for report in reports:
+            course = report.get("curso")
+            if course:
+                counts[course] = counts.get(course, 0) + 1
+        if not counts:
+            return "Sem dados"
+        return max(counts.items(), key=lambda item: item[1])[0]
+
+    def best_cleaner(self, reports):
+        counts = {}
+        for report in reports:
+            if report["status"] == "resolved" and report.get("resolved_by_name"):
+                name = report["resolved_by_name"]
+                counts[name] = counts.get(name, 0) + 1
+        if not counts:
+            return "Sem dados", 0
+        return max(counts.items(), key=lambda item: item[1])
+
+    def chart_rows(self, values):
+        return [{"label": label, "value": count} for label, count in values if count > 0]
 
     def bar_list(self, values):
         if not values:
@@ -591,6 +801,21 @@ class AppHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
+
+    def uploaded_file(self, request_path):
+        filename = Path(request_path).name
+        path = (UPLOAD_DIR / filename).resolve()
+        upload_root = UPLOAD_DIR.resolve()
+        if upload_root not in path.parents or not path.exists():
+            return self.not_found()
+        extension = path.suffix.lower()
+        content_types = {
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".png": "image/png",
+            ".webp": "image/webp",
+        }
+        return self.static_file(path, content_types.get(extension, "application/octet-stream"))
 
     def html_response(self, body, status=HTTPStatus.OK, csrf_token=None):
         data = body.encode("utf-8")

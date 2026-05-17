@@ -3,22 +3,37 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Reportar problema no WC Kimpa Vita</title>
+    <title>Reportar problema - Kimpa Vita</title>
     <link rel="stylesheet" href="/static/styles.css">
   </head>
   <body>
     <main class="page page-narrow">
-      <form class="panel" method="post" action="/report">
+      <form class="panel" method="post" action="/report" enctype="multipart/form-data">
         <p class="eyebrow">Universidade Kimpa Vita</p>
-        <h1>Reportar problema no WC</h1>
+        <h1>Reportar problema</h1>
 
         <label class="field">
-          <span>Localizacao ou numero do WC</span>
-          <input type="number" name="location_id" min="1" max="{{ max_location_id }}" value="{{ location_id }}" placeholder="Ex: 1" required>
-          <small>Introduz um numero entre 1 e {{ max_location_id }}.</small>
+          <span>Categoria do utilizador</span>
+          <select name="categoria_utilizador" required>
+            <option value="">Selecionar</option>
+            {{ user_category_options }}
+          </select>
         </label>
 
-        {{ location_html }}
+        <label class="field">
+          <span>Categoria</span>
+          <select id="categoria_local" name="categoria_local" required>
+            <option value="">Selecionar</option>
+            {{ local_category_options }}
+          </select>
+        </label>
+
+        <label class="field">
+          <span>Local</span>
+          <select id="subcategoria_local" name="subcategoria_local" data-selected="{{ subcategoria_local }}" required>
+            <option value="">Seleciona primeiro a categoria</option>
+          </select>
+        </label>
 
         <fieldset class="issue-grid">
           <legend>Tipo de problema</legend>
@@ -26,13 +41,30 @@
         </fieldset>
 
         <label class="field">
-          <span>Comentário opcional</span>
+          <span>Curso</span>
+          <select name="curso" required>
+            <option value="">Selecionar</option>
+            {{ course_options }}
+          </select>
+        </label>
+
+        <label class="field">
+          <span>Periodo</span>
+          <select name="periodo" required>
+            <option value="">Selecionar</option>
+            {{ period_options }}
+          </select>
+        </label>
+
+        <label class="field">
+          <span>Comentario opcional</span>
           <textarea name="description" maxlength="500" placeholder="Ex: falta papel na cabine do fundo">{{ description }}</textarea>
         </label>
 
         <label class="field">
-          <span>Número de estudante</span>
-          <input type="text" name="student_number" maxlength="80" value="{{ student_number }}" placeholder="Ex: 123456">
+          <span>Upload de foto</span>
+          <input type="file" name="foto_reporte" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" required>
+          <small>Anexa uma imagem em JPG, PNG ou WEBP.</small>
         </label>
 
         {{ error_html }}
@@ -40,5 +72,30 @@
         <button class="button button-primary" type="submit">Enviar</button>
       </form>
     </main>
+    <script>
+      const localOptions = {{ local_options_json }};
+      const categorySelect = document.getElementById('categoria_local');
+      const subcategorySelect = document.getElementById('subcategoria_local');
+
+      function syncSubcategories() {
+        const selectedCategory = categorySelect.value;
+        const selectedSubcategory = subcategorySelect.dataset.selected;
+        const options = localOptions[selectedCategory] || [];
+        subcategorySelect.innerHTML = '<option value="">Selecionar</option>';
+        options.forEach(function (label) {
+          const option = document.createElement('option');
+          option.value = label;
+          option.textContent = label;
+          option.selected = label === selectedSubcategory;
+          subcategorySelect.appendChild(option);
+        });
+      }
+
+      categorySelect.addEventListener('change', function () {
+        subcategorySelect.dataset.selected = '';
+        syncSubcategories();
+      });
+      syncSubcategories();
+    </script>
   </body>
 </html>

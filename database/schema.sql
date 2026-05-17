@@ -5,10 +5,13 @@ BEGIN
   END IF;
 
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'report_status') THEN
-    CREATE TYPE report_status AS ENUM ('pending', 'resolved');
+    CREATE TYPE report_status AS ENUM ('pending', 'resolved', 'canceled');
   END IF;
 END
 $$;
+
+ALTER TYPE issue_type ADD VALUE IF NOT EXISTS 'water';
+ALTER TYPE report_status ADD VALUE IF NOT EXISTS 'canceled';
 
 CREATE TABLE IF NOT EXISTS locations (
   id SERIAL PRIMARY KEY,
@@ -20,7 +23,7 @@ CREATE TABLE IF NOT EXISTS locations (
 
 CREATE TABLE IF NOT EXISTS reports (
   id SERIAL PRIMARY KEY,
-  location_id INTEGER NOT NULL REFERENCES locations(id) ON DELETE CASCADE,
+  location_id INTEGER REFERENCES locations(id) ON DELETE CASCADE,
   issue_type issue_type NOT NULL,
   description TEXT,
   status report_status NOT NULL DEFAULT 'pending',
@@ -55,7 +58,34 @@ ALTER TABLE reports
   ADD COLUMN IF NOT EXISTS student_number VARCHAR(80);
 
 ALTER TABLE reports
+  ALTER COLUMN location_id DROP NOT NULL;
+
+ALTER TABLE reports
   ADD COLUMN IF NOT EXISTS resolved_by_id INTEGER REFERENCES cleaning_users(id);
+
+ALTER TABLE reports
+  ADD COLUMN IF NOT EXISTS categoria_utilizador VARCHAR(40);
+
+ALTER TABLE reports
+  ADD COLUMN IF NOT EXISTS foto_reporte TEXT;
+
+ALTER TABLE reports
+  ADD COLUMN IF NOT EXISTS categoria_local VARCHAR(40);
+
+ALTER TABLE reports
+  ADD COLUMN IF NOT EXISTS subcategoria_local VARCHAR(160);
+
+ALTER TABLE reports
+  ADD COLUMN IF NOT EXISTS curso VARCHAR(120);
+
+ALTER TABLE reports
+  ADD COLUMN IF NOT EXISTS periodo VARCHAR(40);
+
+ALTER TABLE reports
+  ADD COLUMN IF NOT EXISTS falso_alerta BOOLEAN NOT NULL DEFAULT FALSE;
+
+ALTER TABLE reports
+  ADD COLUMN IF NOT EXISTS foto_resolucao TEXT;
 
 CREATE TABLE IF NOT EXISTS cleaning_sessions (
   token VARCHAR(128) PRIMARY KEY,

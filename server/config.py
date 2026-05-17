@@ -9,6 +9,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SCHEMA_PATH = BASE_DIR / "database" / "schema.sql"
 STATIC_DIR = BASE_DIR / "static"
 TEMPLATE_DIR = BASE_DIR / "templates"
+UPLOAD_DIR = STATIC_DIR / "uploads"
 
 LOCAL_ENV_PATH = BASE_DIR / "server" / ".env"
 load_dotenv(LOCAL_ENV_PATH, override=False)
@@ -52,4 +53,5 @@ ADMIN_SESSION_SECONDS = int(os.environ.get("ADMIN_SESSION_SECONDS", str(8 * 60 *
 
 SPAM_WINDOW_SECONDS = int(os.environ.get("SPAM_WINDOW_SECONDS", "60"))
 SPAM_MAX_ATTEMPTS = int(os.environ.get("SPAM_MAX_ATTEMPTS", "3"))
-FORM_MAX_BYTES = int(os.environ.get("FORM_MAX_BYTES", str(64 * 1024)))
+FORM_MAX_BYTES = int(os.environ.get("FORM_MAX_BYTES", str(8 * 1024 * 1024)))
+UPLOAD_MAX_BYTES = int(os.environ.get("UPLOAD_MAX_BYTES", str(5 * 1024 * 1024)))

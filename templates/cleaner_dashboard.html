@@ -37,5 +37,16 @@
         </div>
       </section>
     </main>
+    <script>
+      document.addEventListener('DOMContentLoaded', function () {
+        document.querySelectorAll('.resolve-evidence').forEach(function (form) {
+          const fileInput = form.querySelector('.resolve-file');
+          const button = form.querySelector('.resolve-button');
+          fileInput.addEventListener('change', function () {
+            button.disabled = !fileInput.files.length;
+          });
+        });
+      });
+    </script>
   </body>
 </html>

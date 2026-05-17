@@ -185,16 +185,39 @@ def get_max_location_id():
             return cursor.fetchone()["max_id"]
 
 
-def create_report(location_id, issue_type, description, student_number):
+def create_report(
+    issue_type,
+    description,
+    categoria_utilizador,
+    foto_reporte,
+    categoria_local,
+    subcategoria_local,
+    curso,
+    periodo,
+    location_id=None,
+):
     with connect() as connection:
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                INSERT INTO reports (location_id, issue_type, description, student_number)
-                VALUES (%s, %s, %s, %s)
+                INSERT INTO reports (
+                    location_id, issue_type, description, categoria_utilizador,
+                    foto_reporte, categoria_local, subcategoria_local, curso, periodo
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
                 """,
-                (location_id, issue_type, description, student_number or None),
+                (
+                    location_id,
+                    issue_type,
+                    description,
+                    categoria_utilizador,
+                    foto_reporte,
+                    categoria_local,
+                    subcategoria_local,
+                    curso,
+                    periodo,
+                ),
             )
             return cursor.fetchone()["id"]
 
@@ -202,7 +225,7 @@ def create_report(location_id, issue_type, description, student_number):
 def filtered_reports(status, location_id):
     values = []
     where = []
-    if status in {"pending", "resolved"}:
+    if status in {"pending", "resolved", "canceled"}:
         where.append("r.status = %s")
         values.append(status)
     if str(location_id).isdigit():
@@ -215,10 +238,13 @@ def filtered_reports(status, location_id):
                 f"""
                 SELECT r.id, r.location_id, r.issue_type, r.description, r.status,
                        r.created_at, r.resolved_at, r.student_number,
+                       r.categoria_utilizador, r.foto_reporte, r.categoria_local,
+                       r.subcategoria_local, r.curso, r.periodo, r.falso_alerta,
+                       r.foto_resolucao,
                        l.name AS location_name, l.building, l.floor,
                        u.name AS resolved_by_name
                 FROM reports r
-                JOIN locations l ON l.id = r.location_id
+                LEFT JOIN locations l ON l.id = r.location_id
                 LEFT JOIN cleaning_users u ON u.id = r.resolved_by_id
                 {where_sql}
                 ORDER BY r.created_at DESC
@@ -228,16 +254,35 @@ def filtered_reports(status, location_id):
             return cursor.fetchall()
 
 
-def resolve_report(report_id, resolved_by_id=None):
+def resolve_report(report_id, resolved_by_id=None, foto_resolucao=None):
     with connect() as connection:
         with connection.cursor() as cursor:
             cursor.execute(
                 """
                 UPDATE reports
-                SET status = 'resolved', resolved_at = COALESCE(resolved_at, NOW()), resolved_by_id = %s
+                SET status = 'resolved',
+                    falso_alerta = FALSE,
+                    resolved_at = COALESCE(resolved_at, NOW()),
+                    resolved_by_id = %s,
+                    foto_resolucao = COALESCE(%s, foto_resolucao)
                 WHERE id = %s
                 """,
-                (resolved_by_id, report_id),
+                (resolved_by_id, foto_resolucao, report_id),
+            )
+
+
+def cancel_report(report_id):
+    with connect() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE reports
+                SET status = 'canceled',
+                    falso_alerta = TRUE,
+                    resolved_at = COALESCE(resolved_at, NOW())
+                WHERE id = %s
+                """,
+                (report_id,),
             )
 
 

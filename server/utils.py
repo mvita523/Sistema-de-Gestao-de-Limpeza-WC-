@@ -11,13 +11,69 @@ ISSUE_LABELS = {
     "soap": "Sem sabonete",
     "dirty": "WC sujo",
     "smell": "Mau cheiro",
+    "water": "Falta de Agua",
     "other": "Outro",
 }
 
 STATUS_LABELS = {
     "pending": "Pendente",
     "resolved": "Resolvido",
+    "canceled": "Cancelado",
 }
+
+USER_CATEGORY_LABELS = {
+    "student": "Estudante",
+    "employee": "Funcionario",
+    "visitor": "Visitante",
+}
+
+LOCAL_CATEGORY_LABELS = {
+    "classroom": "Sala de Aula",
+    "wc": "WC",
+    "office": "Gabinete",
+}
+
+LOCAL_SUBCATEGORY_OPTIONS = {
+    "wc": [
+        "WC do pavilhao Feminino - IP",
+        "WC do pavilhao Masculino - IP",
+        "WC do res-do-chao Feminino - IP",
+        "WC do res-do-chao Masculino - IP",
+        "WC do 1o Andar Feminino - IP",
+        "WC do 1o Andar Masculino - IP",
+        "WC do res-do-chao Funcionario Feminino - IP",
+        "WC do res-do-chao Funcionario Masculino - IP",
+        "WC do 1o Andar Funcionario Feminino - IP",
+        "WC do 1o Andar Funcionario Masculino - IP",
+        "WC Feminino - FD",
+        "WC Masculino - FD",
+        "WC Feminino - FE",
+        "WC Masculino - FE",
+    ],
+    "classroom": [f"Sala {number}" for number in range(1, 21)],
+    "office": ["IP", "FE", "FD", "Reitoria"],
+}
+
+COURSE_OPTIONS = [
+    "Engenharia Informatica",
+    "Contabilidade e Gestao",
+    "Agronomia",
+    "Enfermagem",
+    "Direito",
+    "Economia",
+    "Medicina",
+    "Funcionario",
+    "Visitante",
+]
+
+PERIOD_LABELS = {
+    "morning": "Manha",
+    "afternoon": "Tarde",
+    "night": "Noite",
+}
+
+ALLOWED_IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "webp"}
+ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
 
 EMAIL_RE = re.compile(r"^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$")
 USERNAME_RE = re.compile(r"^[a-z0-9_.-]{3,40}$")
