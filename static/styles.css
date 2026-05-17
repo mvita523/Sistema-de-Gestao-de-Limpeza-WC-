@@ -312,8 +312,10 @@ textarea:focus {
 
 .analytics {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 24px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 22px;
+  align-items: stretch;
 }
 
 .chart-canvas {
@@ -563,10 +565,19 @@ html {
 }
 
 @media (max-width: 760px) {
-  .page {
+  .chart-canvas {
+    width: 100%;
+    height: 160px;
+  }
+
+  .panel {
     padding: 12px;
   }
 
+  .analytics {
+    gap: 10px;
+  }
+}
   .topbar {
     flex-direction: column;
     align-items: stretch;
@@ -577,7 +588,6 @@ html {
     grid-template-columns: 1fr 1fr;
   }
 
-  .analytics,
   .filters,
   .email-settings,
   .user-form,
