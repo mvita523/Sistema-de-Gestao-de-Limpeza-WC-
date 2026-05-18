@@ -41,10 +41,9 @@
           <p class="muted chart-note">Curso com mais reclamacoes: {{ top_course }}</p>
         </article>
         <article class="panel">
-          <h2>Funcionario com melhor desempenho</h2>
-          <div class="performance-card">
-            <strong>{{ best_cleaner_name }}</strong>
-            <span>{{ best_cleaner_total }} problemas resolvidos</span>
+          <h2>Top 5 funcionarios (reports resolvidos)</h2>
+          <div class="top-cleaners-list">
+            {{ top_cleaners_html }}
           </div>
         </article>
         <article class="panel">
@@ -56,8 +55,12 @@
       <section class="panel reports">
         <form class="filters" method="get" action="/admin">
           <select name="status">{{ status_options }}</select>
-          <select name="location_id">{{ location_options }}</select>
-          <button class="button button-secondary" type="submit">Filtrar</button>
+          <select name="categoria_local" id="filterCategoria">{{ category_options }}</select>
+          <select name="subcategoria_local" id="filterSubcategoria">{{ subcategory_options }}</select>
+          <select name="periodo">{{ periodo_options }}</select>
+          <input type="text" name="cleaner_name" placeholder="Pesquisar funcionario..." value="{{ cleaner_name_query }}">
+          <button class="button button-secondary" type="submit">Pesquisar</button>
+          <a class="button button-secondary btn-outline" href="/admin">Limpar</a>
         </form>
         <form class="email-settings" method="post" action="/admin/notification-email">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -96,6 +99,11 @@
           </label>
           <button class="button button-secondary" type="submit">Criar utilizador</button>
         </form>
+        <form class="user-search-row" method="get" action="/admin">
+          <input type="text" name="user_search" placeholder="Pesquisar por nome..." value="{{ user_search_query }}">
+          <button class="button button-secondary btn-outline" type="submit">Pesquisar</button>
+          <a class="button button-secondary btn-outline" href="/admin">Limpar</a>
+        </form>
         <div class="user-list">
           {{ cleaning_user_rows }}
         </div>
@@ -103,6 +111,25 @@
     </main>
     <script>
       const dashboardCharts = JSON.parse('{{ chart_payload }}');
+
+      const categoriaSelect = document.getElementById('filterCategoria');
+      const subcategoriaSelect = document.getElementById('filterSubcategoria');
+      const subcategoryData = {{ subcategory_options_json }};
+
+      function syncSubcategories() {
+        const selectedCategory = categoriaSelect.value || 'wc';
+        const options = subcategoryData[selectedCategory] || [];
+        subcategoriaSelect.innerHTML = '<option value="">Todas as localizacoes</option>';
+        options.forEach(function (label) {
+          const opt = document.createElement('option');
+          opt.value = label;
+          opt.textContent = label;
+          subcategoriaSelect.appendChild(opt);
+        });
+      }
+
+      categoriaSelect.addEventListener('change', syncSubcategories);
+      syncSubcategories();
 
       function drawBarChart(canvasId, rows, color) {
         const canvas = document.getElementById(canvasId);

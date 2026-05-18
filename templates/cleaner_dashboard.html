@@ -20,8 +20,9 @@
         </form>
       </header>
 
-      <section class="stats">
+      <section class="stats" style="grid-template-columns:repeat(2,minmax(0,1fr))">
         <article><span>Pendentes</span><strong>{{ pending_count }}</strong></article>
+        <article><span>Resolvidos</span><strong>{{ resolved_count }}</strong></article>
       </section>
 
       <section class="panel account-panel">

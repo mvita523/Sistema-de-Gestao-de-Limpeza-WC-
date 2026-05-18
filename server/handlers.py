@@ -302,10 +302,15 @@ class AppHandler(BaseHTTPRequestHandler):
         csrf_token, is_new = auth.get_or_create_csrf_token(self.headers)
         status = clean_text((query.get("status") or ["pending"])[0], 20)
         location_id = clean_text((query.get("location_id") or ["all"])[0], 20)
-        reports = database.filtered_reports(status, location_id)
+        categoria_local = clean_text((query.get("categoria_local") or ["all"])[0], 20)
+        periodo = clean_text((query.get("periodo") or ["all"])[0], 20)
+        cleaner_name = clean_text((query.get("cleaner_name") or [""])[0], 120)
+        user_search = clean_text((query.get("user_search") or [""])[0], 120)
+        reports = database.filtered_reports(status, location_id, categoria_local=categoria_local if categoria_local != "all" else None, periodo=periodo if periodo != "all" else None, resolved_by_name=cleaner_name or None)
         all_reports = database.filtered_reports("all", "all")
-        locations = database.get_locations()
-        best_cleaner_name, best_cleaner_total = self.best_cleaner(all_reports)
+        cleaning_users = database.list_cleaning_users()
+        if user_search:
+            cleaning_users = [u for u in cleaning_users if user_search.lower() in u["name"].lower()]
         body = render_template(
             "admin.html",
             csrf_token=escape(csrf_token),
@@ -313,17 +318,21 @@ class AppHandler(BaseHTTPRequestHandler):
             settings_message=self.settings_message((query.get("settings") or [""])[0]),
             users_message=self.users_message((query.get("users") or [""])[0]),
             notification_email=escape(email_service.get_notification_email()),
-            cleaning_user_rows=self.cleaning_user_rows(cleaning_users=database.list_cleaning_users(), csrf_token=csrf_token),
+            cleaning_user_rows=self.cleaning_user_rows(cleaning_users=cleaning_users, csrf_token=csrf_token),
             status_options=self.status_options(status),
-            location_options=self.location_options(locations, location_id),
-            report_rows=self.report_rows(reports, status, location_id, csrf_token),
+            category_options=self.category_options(categoria_local),
+            periodo_options=self.period_options(periodo),
+            subcategory_options=self.subcategory_options(categoria_local, ""),
+            subcategory_options_json=json.dumps(LOCAL_SUBCATEGORY_OPTIONS),
+            report_rows=self.report_rows(reports, status, location_id, periodo, csrf_token),
             visible_count=len(reports),
             pending_count=sum(1 for report in all_reports if report["status"] == "pending"),
             resolved_count=sum(1 for report in all_reports if report["status"] == "resolved"),
             false_alert_count=sum(1 for report in all_reports if report.get("falso_alerta")),
-            best_cleaner_name=escape(best_cleaner_name),
-            best_cleaner_total=best_cleaner_total,
+            top_cleaners_html=self.top_cleaners_html(all_reports),
             top_course=escape(self.top_course(all_reports)),
+            cleaner_name_query=escape(cleaner_name),
+            user_search_query=escape(user_search),
             chart_payload=json.dumps(
                 {
                     "byDay": self.chart_rows(self.count_by_day(all_reports)),
@@ -347,6 +356,7 @@ class AppHandler(BaseHTTPRequestHandler):
             return self.html_response(body, csrf_token=csrf_token if is_new else None)
 
         reports = database.filtered_reports("pending", "all")
+        resolved_count = database.count_resolved_by_cleaner(cleaner["id"])
         body = render_template(
             "cleaner_dashboard.html",
             csrf_token=escape(csrf_token),
@@ -355,6 +365,7 @@ class AppHandler(BaseHTTPRequestHandler):
             cleaner_email=escape(cleaner["email"] or "Sem email associado"),
             report_rows=self.cleaner_report_rows(reports, csrf_token),
             pending_count=len(reports),
+            resolved_count=resolved_count,
         )
         return self.html_response(body, csrf_token=csrf_token if is_new else None)
 
@@ -508,7 +519,7 @@ class AppHandler(BaseHTTPRequestHandler):
         if not auth.valid_csrf(self.headers, form):
             return self.redirect("/admin")
         database.resolve_report(report_id)
-        return self.redirect(redirect_target("/admin", {"status": form.get("status", "pending"), "location_id": form.get("location_id", "all")}))
+        return self.redirect(redirect_target("/admin", {"status": form.get("status", "pending"), "categoria_local": form.get("categoria_local", "all"), "periodo": form.get("periodo", "all")}))
 
     def cancel_report(self, report_id):
         if not auth.valid_admin_cookie(self.headers):
@@ -519,7 +530,7 @@ class AppHandler(BaseHTTPRequestHandler):
         if not auth.valid_csrf(self.headers, form):
             return self.redirect("/admin")
         database.cancel_report(report_id)
-        return self.redirect(redirect_target("/admin", {"status": form.get("status", "pending"), "location_id": form.get("location_id", "all")}))
+        return self.redirect(redirect_target("/admin", {"status": form.get("status", "pending"), "categoria_local": form.get("categoria_local", "all"), "periodo": form.get("periodo", "all")}))
 
     def resolve_report_cleaner(self, report_id):
         cleaner = database.get_cleaner_by_session(auth.get_cleaner_session_token(self.headers))
@@ -576,17 +587,61 @@ class AppHandler(BaseHTTPRequestHandler):
 
     def status_options(self, current):
         options = [("all", "Todos os estados"), ("pending", "Pendentes"), ("resolved", "Resolvidos"), ("canceled", "Cancelados")]
-        return "\n".join(f'<option value="{value}" {"selected" if value == current else ""}>{label}</option>' for value, label in options)
+        parts = []
+        for value, label in options:
+            sel = ' selected' if value == current else ''
+            parts.append(f'<option value="{value}"{sel}>{label}</option>')
+        return "\n".join(parts)
 
     def location_options(self, locations, current):
-        rows = ['<option value="all">Todas as localizacoes</option>']
+        rows = []
         for location in locations:
             selected = "selected" if str(location["id"]) == current else ""
             label = f"Sala/WC {location['id']} - {location['name']} - {location['building']}"
             rows.append(f'<option value="{location["id"]}" {selected}>{escape(label)}</option>')
         return "\n".join(rows)
 
-    def report_rows(self, reports, status, location_id, csrf_token):
+    def category_options(self, current):
+        options = [("all", "Todas as categorias"), ("wc", "WC"), ("classroom", "Sala de Aula"), ("office", "Gabinete")]
+        parts = []
+        for value, label in options:
+            sel = ' selected' if value == current else ''
+            parts.append(f'<option value="{value}"{sel}>{label}</option>')
+        return "\n".join(parts)
+
+    def subcategory_options(self, categoria_local, current):
+        options = [("", "Todas as localizacoes")]
+        subcats = {
+            "wc": ["WC do pavilhao Feminino - IP", "WC do pavilhao Masculino - IP", "WC do res-do-chao Feminino - IP", "WC do res-do-chao Masculino - IP", "WC do 1o Andar Feminino - IP", "WC do 1o Andar Masculino - IP", "WC do res-do-chao Funcionario Feminino - IP", "WC do res-do-chao Funcionario Masculino - IP", "WC do 1o Andar Funcionario Feminino - IP", "WC do 1o Andar Funcionario Masculino - IP", "WC Feminino - FD", "WC Masculino - FD", "WC Feminino - FE", "WC Masculino - FE"],
+            "classroom": [f"Sala {n}" for n in range(1, 21)],
+            "office": ["IP", "FE", "FD", "Reitoria"],
+        }
+        if categoria_local and categoria_local in subcats:
+            for name in subcats[categoria_local]:
+                options.append((name, name))
+        parts = []
+        for value, label in options:
+            sel = ' selected' if value == current else ''
+            parts.append(f'<option value="{escape(value)}"{sel}>{escape(label)}</option>')
+        return "\n".join(parts)
+
+    def subcategory_options_json(self, categoria_local):
+        subcats = {
+            "wc": ["WC do pavilhao Feminino - IP", "WC do pavilhao Masculino - IP", "WC do res-do-chao Feminino - IP", "WC do res-do-chao Masculino - IP", "WC do 1o Andar Feminino - IP", "WC do 1o Andar Masculino - IP", "WC do res-do-chao Funcionario Feminino - IP", "WC do res-do-chao Funcionario Masculino - IP", "WC do 1o Andar Funcionario Feminino - IP", "WC do 1o Andar Funcionario Masculino - IP", "WC Feminino - FD", "WC Masculino - FD", "WC Feminino - FE", "WC Masculino - FE"],
+            "classroom": [f"Sala {n}" for n in range(1, 21)],
+            "office": ["IP", "FE", "FD", "Reitoria"],
+        }
+        return json.dumps(subcats.get(categoria_local or "wc", []))
+
+    def period_options(self, current):
+        options = [("all", "Todos os periodos"), ("morning", "Manha"), ("afternoon", "Tarde"), ("night", "Noite")]
+        parts = []
+        for value, label in options:
+            sel = ' selected' if value == current else ''
+            parts.append(f'<option value="{value}"{sel}>{label}</option>')
+        return "\n".join(parts)
+
+    def report_rows(self, reports, status, location_id, periodo, csrf_token):
         if not reports:
             return '<p class="empty">Nenhum reporte encontrado.</p>'
         rows = []
@@ -603,19 +658,21 @@ class AppHandler(BaseHTTPRequestHandler):
             action = ""
             if report["status"] == "pending":
                 action = (
-                    '<div class="report-actions">'
-                    f'<form method="post" action="/admin/reports/{report["id"]}/resolve">'
-                    f'<input type="hidden" name="csrf_token" value="{escape(csrf_token)}">'
-                    f'<input type="hidden" name="status" value="{escape(status)}">'
-                    f'<input type="hidden" name="location_id" value="{escape(location_id)}">'
-                    '<button class="button button-success" type="submit">Resolver</button>'
-                    "</form>"
-                    f'<form method="post" action="/admin/reports/{report["id"]}/cancel">'
-                    f'<input type="hidden" name="csrf_token" value="{escape(csrf_token)}">'
-                    f'<input type="hidden" name="status" value="{escape(status)}">'
-                    f'<input type="hidden" name="location_id" value="{escape(location_id)}">'
-                    '<button class="button button-danger" type="submit">Cancelar</button>'
-                    "</form></div>"
+                     '<div class="report-actions">'
+                     f'<form method="post" action="/admin/reports/{report["id"]}/resolve">'
+                     f'<input type="hidden" name="csrf_token" value="{escape(csrf_token)}">'
+                     f'<input type="hidden" name="status" value="{escape(status)}">'
+                     f'<input type="hidden" name="categoria_local" value="{escape(report.get("categoria_local", "all"))}">'
+                     f'<input type="hidden" name="periodo" value="{escape(periodo)}">'
+                     '<button class="button button-success" type="submit">Resolver</button>'
+                     "</form>"
+                     f'<form method="post" action="/admin/reports/{report["id"]}/cancel">'
+                     f'<input type="hidden" name="csrf_token" value="{escape(csrf_token)}">'
+                     f'<input type="hidden" name="status" value="{escape(status)}">'
+                     f'<input type="hidden" name="categoria_local" value="{escape(report.get("categoria_local", "all"))}">'
+                     f'<input type="hidden" name="periodo" value="{escape(periodo)}">'
+                     '<button class="button button-danger" type="submit">Cancelar</button>'
+                     "</form></div>"
                 )
             rows.append(
                 '<article class="report-row"><div><div class="badges">'
@@ -754,15 +811,29 @@ class AppHandler(BaseHTTPRequestHandler):
             return "Sem dados"
         return max(counts.items(), key=lambda item: item[1])[0]
 
-    def best_cleaner(self, reports):
+    def top_cleaners(self, reports, limit=5):
         counts = {}
         for report in reports:
             if report["status"] == "resolved" and report.get("resolved_by_name"):
                 name = report["resolved_by_name"]
                 counts[name] = counts.get(name, 0) + 1
-        if not counts:
-            return "Sem dados", 0
-        return max(counts.items(), key=lambda item: item[1])
+        ranked = sorted(counts.items(), key=lambda item: item[1], reverse=True)[:limit]
+        return ranked
+
+    def top_cleaners_html(self, reports, limit=5):
+        cleaners = self.top_cleaners(reports, limit)
+        if not cleaners:
+            return '<p class="muted">Sem dados</p>'
+        rows = []
+        for i, (name, total) in enumerate(cleaners, 1):
+            rows.append(
+                f'<div class="top-cleaner-row">'
+                f'<span class="top-cleaner-rank">{i}.</span>'
+                f'<span class="top-cleaner-name">{escape(name)}</span>'
+                f'<span class="top-cleaner-total">{total} resolvidos</span>'
+                f'</div>'
+            )
+        return "\n".join(rows)
 
     def chart_rows(self, values):
         return [{"label": label, "value": count} for label, count in values if count > 0]

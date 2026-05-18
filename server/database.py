@@ -222,7 +222,7 @@ def create_report(
             return cursor.fetchone()["id"]
 
 
-def filtered_reports(status, location_id):
+def filtered_reports(status, location_id, categoria_local=None, subcategoria_local=None, periodo=None, resolved_by_name=None):
     values = []
     where = []
     if status in {"pending", "resolved", "canceled"}:
@@ -231,6 +231,18 @@ def filtered_reports(status, location_id):
     if str(location_id).isdigit():
         where.append("r.location_id = %s")
         values.append(int(location_id))
+    if categoria_local:
+        where.append("r.categoria_local = %s")
+        values.append(categoria_local)
+    if subcategoria_local:
+        where.append("r.subcategoria_local = %s")
+        values.append(subcategoria_local)
+    if periodo:
+        where.append("r.periodo = %s")
+        values.append(periodo)
+    if resolved_by_name:
+        where.append("u.name ILIKE %s")
+        values.append(f"%{resolved_by_name}%")
     where_sql = "WHERE " + " AND ".join(where) if where else ""
     with connect() as connection:
         with connection.cursor() as cursor:
@@ -323,3 +335,14 @@ def get_cleaner_notification_emails():
                 """
             )
             return [row["email"].strip() for row in cursor.fetchall() if row["email"].strip()]
+
+
+def count_resolved_by_cleaner(cleaner_id):
+    with connect() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT COUNT(*) AS total FROM reports WHERE status = 'resolved' AND resolved_by_id = %s",
+                (cleaner_id,),
+            )
+            row = cursor.fetchone()
+            return row["total"] if row else 0
