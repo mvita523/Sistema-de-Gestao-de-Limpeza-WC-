@@ -108,6 +108,9 @@ class AppHandler(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/cleaner/reports/(\d+)/resolve", parsed.path)
         if match:
             return self.resolve_report_cleaner(int(match.group(1)))
+        match = re.fullmatch(r"/cleaner/reports/(\d+)/false-alert", parsed.path)
+        if match:
+            return self.mark_false_alert_cleaner(int(match.group(1)))
         return self.not_found()
 
     def do_PATCH(self):
@@ -311,6 +314,8 @@ class AppHandler(BaseHTTPRequestHandler):
         cleaning_users = database.list_cleaning_users()
         if user_search:
             cleaning_users = [u for u in cleaning_users if user_search.lower() in u["name"].lower()]
+        for user in cleaning_users:
+            user["false_alert_count"] = database.count_false_alerts_by_cleaner(user["id"])
         body = render_template(
             "admin.html",
             csrf_token=escape(csrf_token),
@@ -357,6 +362,7 @@ class AppHandler(BaseHTTPRequestHandler):
 
         reports = database.filtered_reports("pending", "all")
         resolved_count = database.count_resolved_by_cleaner(cleaner["id"])
+        false_alert_count = database.count_false_alerts_by_cleaner(cleaner["id"])
         body = render_template(
             "cleaner_dashboard.html",
             csrf_token=escape(csrf_token),
@@ -366,6 +372,7 @@ class AppHandler(BaseHTTPRequestHandler):
             report_rows=self.cleaner_report_rows(reports, csrf_token),
             pending_count=len(reports),
             resolved_count=resolved_count,
+            false_alert_count=false_alert_count,
         )
         return self.html_response(body, csrf_token=csrf_token if is_new else None)
 
@@ -549,6 +556,23 @@ class AppHandler(BaseHTTPRequestHandler):
         database.resolve_report(report_id, cleaner["id"], foto_resolucao)
         return self.redirect("/cleaner")
 
+    def mark_false_alert_cleaner(self, report_id):
+        cleaner = database.get_cleaner_by_session(auth.get_cleaner_session_token(self.headers))
+        if not cleaner:
+            return self.redirect("/cleaner")
+        try:
+            form, files = self.read_multipart_form()
+        except ValueError:
+            return self.redirect("/cleaner")
+        if not auth.valid_csrf(self.headers, form):
+            return self.redirect("/cleaner")
+        try:
+            foto_resolucao = self.save_uploaded_image(files, "foto_resolucao")
+        except ValueError:
+            return self.redirect("/cleaner")
+        database.mark_false_alert(report_id, cleaner["id"], foto_resolucao)
+        return self.redirect("/cleaner")
+
     def safe_form_or_redirect(self, location):
         try:
             return self.read_form()
@@ -652,7 +676,7 @@ class AppHandler(BaseHTTPRequestHandler):
             if report["status"] == "resolved":
                 resolved_by_html = f'<p class="muted">Resolvido por: {escape(report.get("resolved_by_name") or "Administrador")}</p>'
             if report["status"] == "canceled":
-                resolved_by_html = '<p class="muted">Marcado como falso alerta.</p>'
+                resolved_by_html = f'<p class="muted">Cancelado por: {escape(report.get("resolved_by_name") or "Administrador")}</p>'
             report_photo = self.photo_link(report.get("foto_reporte"), "Ver foto do reporte")
             resolution_photo = self.photo_link(report.get("foto_resolucao"), "Ver foto da resolucao")
             action = ""
@@ -705,11 +729,17 @@ class AppHandler(BaseHTTPRequestHandler):
                 f'<p class="room-number">{escape(self.report_location_detail(report))}</p>'
                 f'<p class="muted">{format_datetime(report["created_at"])}</p>'
                 f"{metadata}{description}{report_photo}</div>"
+                f'<div class="resolve-group">'
                 f'<form class="resolve-evidence" method="post" enctype="multipart/form-data" action="/cleaner/reports/{report["id"]}/resolve">'
                 f'<input type="hidden" name="csrf_token" value="{escape(csrf_token)}">'
                 '<input class="resolve-file" type="file" name="foto_resolucao" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" required>'
                 '<button class="button button-success resolve-button" type="submit" disabled>Resolver</button>'
-                "</form></article>"
+                f'</form>'
+                f'<form class="resolve-evidence" method="post" enctype="multipart/form-data" action="/cleaner/reports/{report["id"]}/false-alert">'
+                f'<input type="hidden" name="csrf_token" value="{escape(csrf_token)}">'
+                '<input class="resolve-file" type="file" name="foto_resolucao" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" required>'
+                '<button class="button button-danger resolve-button" type="submit" disabled>Falso alerta</button>'
+                '</form></div></article>'
             )
         return "\n".join(rows)
 
@@ -725,6 +755,7 @@ class AppHandler(BaseHTTPRequestHandler):
             rows.append(
                 '<article class="user-row"><div>'
                 f'<strong>{escape(user["name"])}</strong><span>{escape(user["username"])}</span></div>'
+                f'<div><span class="badge badge-danger">Falsos alertas: {user["false_alert_count"]}</span></div>'
 
                 f'<form class="user-email-form" method="post" action="/admin/cleaning-users/{user["id"]}/email">'
                 f'<input type="hidden" name="csrf_token" value="{escape(csrf_token)}">'

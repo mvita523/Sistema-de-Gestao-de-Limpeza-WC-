@@ -346,3 +346,30 @@ def count_resolved_by_cleaner(cleaner_id):
             )
             row = cursor.fetchone()
             return row["total"] if row else 0
+
+def count_false_alerts_by_cleaner(cleaner_id):
+    with connect() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT COUNT(*) AS total FROM reports WHERE falso_alerta = TRUE AND resolved_by_id = %s",
+                (cleaner_id,),
+            )
+            row = cursor.fetchone()
+            return row["total"] if row else 0
+
+
+def mark_false_alert(report_id, cleaner_id, foto_resolucao=None):
+    with connect() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE reports
+                SET status = 'canceled',
+                    falso_alerta = TRUE,
+                    resolved_at = COALESCE(resolved_at, NOW()),
+                    resolved_by_id = %s,
+                    foto_resolucao = COALESCE(%s, foto_resolucao)
+                WHERE id = %s
+                """,
+                (cleaner_id, foto_resolucao, report_id),
+            )

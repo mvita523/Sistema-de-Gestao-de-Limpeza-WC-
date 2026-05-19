@@ -20,9 +20,10 @@
         </form>
       </header>
 
-      <section class="stats" style="grid-template-columns:repeat(2,minmax(0,1fr))">
+      <section class="stats">
         <article><span>Pendentes</span><strong>{{ pending_count }}</strong></article>
         <article><span>Resolvidos</span><strong>{{ resolved_count }}</strong></article>
+        <article><span>Falsos alertas</span><strong>{{ false_alert_count }}</strong></article>
       </section>
 
       <section class="panel account-panel">

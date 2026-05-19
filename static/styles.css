@@ -287,6 +287,10 @@ textarea:focus {
   margin-top: 22px;
 }
 
+.stats {
+  grid-template-columns: repeat(3, 1fr);
+}
+
 .stats-four {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -616,9 +620,17 @@ html {
   flex-wrap: nowrap;
 }
 
+.resolve-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-end;
+  margin-left: auto;
+}
+
 .resolve-evidence {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   align-items: center;
   min-width: auto;
 }
@@ -633,6 +645,11 @@ html {
   margin-top: 10px;
   color: var(--campus);
   font-weight: 800;
+}
+
+.badge-danger {
+  background: #fff1f0;
+  color: var(--danger);
 }
 
 .report-row:last-child {
@@ -738,7 +755,11 @@ html {
 
   .report-actions,
   .resolve-evidence {
-    flex-direction: column;
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .resolve-group {
     align-items: stretch;
   }
 
