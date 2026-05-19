@@ -46,7 +46,7 @@ def notify_admin_by_email(report_id, issue_type, location, description):
     payload = {
         "sender": {
             "name": "Sistema Limpeza WC",
-            "email": "no-reply@brevo.com"
+            "email": "mvita523@gmail.com"
         },
         "to": [{"email": email} for email in recipients],
         "subject": f"Novo reporte WC #{report_id}",
