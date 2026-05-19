@@ -44,7 +44,7 @@ def notify_admin_by_email(report_id, issue_type, location, description):
     message.set_content("\n".join(body_parts))
 
     try:
-        with smtplib.SMTP("smtp.gmail.com", 587, timeout=10) as smtp:
+        with smtplib.SMTP("smtp-relay.brevo.com", 587, timeout=10) as smtp:
             smtp.ehlo()
             smtp.starttls()
             smtp.ehlo()
