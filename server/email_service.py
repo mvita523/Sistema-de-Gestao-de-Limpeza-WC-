@@ -44,13 +44,16 @@ def notify_admin_by_email(report_id, issue_type, location, description):
     message.set_content("\n".join(body_parts))
 
     try:
-        with smtplib.SMTP_SSL("smtp.gmail.com", 587, timeout=10) as smtp:
+        with smtplib.SMTP("smtp.gmail.com", 587, timeout=10) as smtp:
+            smtp.ehlo()
             smtp.starttls()
+            smtp.ehlo()
             smtp.login(GMAIL_ADDRESS, GMAIL_APP_PASSWORD)
             smtp.send_message(message)
+        
         logger.info("email_sent report_id=%s recipient_count=%s", report_id, len(recipients))
         return True, ""
+    
     except (smtplib.SMTPException, OSError):
         logger.exception("email_failed report_id=%s", report_id)
         return False, "Falha ao enviar email."
-
