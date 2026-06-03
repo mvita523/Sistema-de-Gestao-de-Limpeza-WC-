@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="pt-PT">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Relatorio Mensal - {{ institution_name }}</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <style>
+      @page {
+        size: A4 landscape;
+        margin: 12mm 10mm 12mm 10mm;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body.print-body {
+        background: #fff;
+        font-size: 9pt;
+        line-height: 1.35;
+        color: #102027;
+        margin: 0;
+        padding: 0;
+      }
+      .print-report {
+        max-width: 100%;
+        padding: 0;
+      }
+      .report-cover {
+        page-break-after: always;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 90vh;
+        text-align: center;
+        padding: 32px 24px;
+      }
+      .report-cover h1 {
+        font-size: 1.8rem;
+        margin-bottom: 8px;
+      }
+      .report-cover .subtitle {
+        font-size: 0.95rem;
+        color: #637381;
+        margin-bottom: 20px;
+      }
+      .report-cover .meta {
+        font-size: 0.85rem;
+        line-height: 1.6;
+        color: #334155;
+      }
+      .compact-section {
+        margin-bottom: 14px;
+        page-break-inside: avoid;
+      }
+      .compact-section h2 {
+        font-size: 0.95rem;
+        margin: 0 0 6px 0;
+        padding-bottom: 4px;
+        border-bottom: 1.5px solid #dbe4f0;
+        color: #102027;
+      }
+      .executive-grid {
+        display: grid;
+        grid-template-columns: repeat(8, 1fr);
+        gap: 6px;
+        margin-bottom: 10px;
+      }
+      .stat-card {
+        border: 1px solid #dbe4f0;
+        border-radius: 4px;
+        padding: 5px 6px;
+        background: #f8fbff;
+        text-align: center;
+      }
+      .stat-card .label {
+        font-size: 0.65rem;
+        font-weight: 800;
+        color: #637381;
+        text-transform: uppercase;
+        letter-spacing: 0.02em;
+      }
+      .stat-card .value {
+        font-size: 1.1rem;
+        font-weight: 900;
+        color: #102027;
+        margin-top: 2px;
+      }
+      .charts-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+        page-break-before: always;
+      }
+      .charts-grid article {
+        border: 1px solid #dbe4f0;
+        border-radius: 6px;
+        padding: 10px;
+      }
+      .charts-grid h2 {
+        font-size: 0.85rem;
+        margin: 0 0 6px 0;
+      }
+      .chart-canvas {
+        width: 100%;
+        height: 140px;
+        display: block;
+      }
+      .table-shell {
+        page-break-before: always;
+      }
+      .compact-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 8.5pt;
+      }
+      .compact-table thead {
+        display: table-header-group;
+      }
+      .compact-table tr {
+        page-break-inside: avoid;
+      }
+      .compact-table th {
+        text-align: left;
+        padding: 4px 6px;
+        border-bottom: 1.5px solid #dbe4f0;
+        font-weight: 800;
+        font-size: 8pt;
+        color: #334155;
+        background: #f8fbff;
+        white-space: nowrap;
+      }
+      .compact-table td {
+        padding: 3px 6px;
+        border-bottom: 1px solid #edf2f7;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 160px;
+      }
+      .compact-table .badge {
+        font-size: 8pt;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-weight: 800;
+      }
+      .badge-status {
+        background: #fff7e6;
+        color: #9a5b00;
+      }
+      .analysis-box {
+        border: 1px solid #dbe4f0;
+        border-radius: 6px;
+        padding: 10px 12px;
+        background: #f8fbff;
+        margin-bottom: 8px;
+        font-size: 8.5pt;
+        line-height: 1.4;
+      }
+      .conclusions-box {
+        border-left: 3px solid #2563eb;
+        background: #f8fbff;
+        padding: 10px 12px;
+        border-radius: 0 6px 6px 0;
+        margin-top: 10px;
+        font-size: 8.5pt;
+      }
+      .conclusions-box ul {
+        margin: 4px 0 0 14px;
+        padding: 0;
+        line-height: 1.5;
+      }
+      @media print {
+        body {
+          background: #fff;
+        }
+      }
+      @media (max-width: 900px) {
+        .executive-grid {
+          grid-template-columns: repeat(4, 1fr);
+        }
+        .charts-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body class="print-body">
+    <main class="print-report">
+      <!-- CAPA -->
+      <section class="report-cover">
+        <p class="eyebrow">{{ institution_name }}</p>
+        <h1>Sistema de Gestao de Limpeza e Ocorrencias</h1>
+        <p class="subtitle">Relatorio Mensal</p>
+        <div class="meta">
+          <p><strong>Mes:</strong> {{ month }}</p>
+          <p><strong>Data de emissao:</strong> {{ issued_at }}</p>
+          <p><strong>Utilizador:</strong> {{ generated_by }}</p>
+          <p><strong>Total de registos:</strong> {{ total_count }}</p>
+        </div>
+      </section>
+
+      <!-- RESUMO EXECUTIVO -->
+      <section class="compact-section">
+        <h2>Resumo Executivo</h2>
+        <div class="executive-grid">
+          <div class="stat-card"><div class="label">Total</div><div class="value">{{ total_count }}</div></div>
+          <div class="stat-card"><div class="label">Resolvidas</div><div class="value">{{ resolved_count }}</div></div>
+          <div class="stat-card"><div class="label">Pendentes</div><div class="value">{{ pending_count }}</div></div>
+          <div class="stat-card"><div class="label">Em Resolucao</div><div class="value">{{ in_progress_count }}</div></div>
+          <div class="stat-card"><div class="label">Falsos Alertas</div><div class="value">{{ false_alert_count }}</div></div>
+          <div class="stat-card"><div class="label">Taxa Resol.</div><div class="value">{{ resolution_rate }}</div></div>
+          <div class="stat-card"><div class="label">Espera Media</div><div class="value">{{ avg_wait_time }}</div></div>
+          <div class="stat-card"><div class="label">Resol. Media</div><div class="value">{{ avg_resolution_time }}</div></div>
+        </div>
+        <div class="executive-grid">
+          <div class="stat-card"><div class="label">Local TOP</div><div class="value" style="font-size:0.85rem;">{{ top_location }}</div></div>
+          <div class="stat-card"><div class="label">Categoria TOP</div><div class="value" style="font-size:0.85rem;">{{ top_issue }}</div></div>
+          <div class="stat-card"><div class="label">Periodo TOP</div><div class="value">{{ top_period }}</div></div>
+        </div>
+      </section>
+
+      <!-- GRAFICOS -->
+      <section class="charts-grid">
+        <article>
+          <h2>Ocorrencias por Categoria</h2>
+          <canvas class="chart-canvas" id="printIssueChart"></canvas>
+        </article>
+        <article>
+          <h2>Estado dos Relatorios</h2>
+          <canvas class="chart-canvas" id="printStatusChart"></canvas>
+        </article>
+        <article>
+          <h2>Relatorios por Periodo</h2>
+          <canvas class="chart-canvas" id="printPeriodChart"></canvas>
+        </article>
+        <article>
+          <h2>Evolucao Mensal</h2>
+          <canvas class="chart-canvas" id="printMonthChart"></canvas>
+        </article>
+      </section>
+
+      <!-- TABELA PRINCIPAL -->
+      <section class="table-shell compact-section">
+        <h2>Registo de Ocorrencias ({{ total_count }})</h2>
+        <table class="compact-table">
+          <thead>
+            <tr>
+              <th style="width:5%">ID</th>
+              <th style="width:12%">Data</th>
+              <th style="width:20%">Local</th>
+              <th style="width:13%">Categoria</th>
+              <th style="width:10%">Estado</th>
+              <th style="width:10%">Tempo Espera</th>
+              <th style="width:10%">Tempo Resol.</th>
+              <th style="width:16%">Resolvido Por</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{ table_rows }}
+          </tbody>
+        </table>
+      </section>
+
+      <!-- ANALISE ESTATISTICA -->
+      <section class="compact-section">
+        <h2>Analise Estatistica</h2>
+        <div class="analysis-box">{{ analysis_html }}</div>
+      </section>
+
+      <!-- CONCLUSOES -->
+      <section class="conclusions-box compact-section">
+        <h2>Conclusoes</h2>
+        {{ conclusions_html }}
+      </section>
+
+    </main>
+    <script>
+      const printCharts = JSON.parse('{{ chart_payload }}');
+      function drawBarChart(canvasId, rows, color) {
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        const ratio = window.devicePixelRatio || 1;
+        const width = Math.min(canvas.parentElement.clientWidth || 500, 520);
+        const height = 130;
+        canvas.width = width * ratio;
+        canvas.height = height * ratio;
+        canvas.style.width = '100%';
+        canvas.style.height = height + 'px';
+        ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+        ctx.clearRect(0, 0, width, height);
+        if (!rows.length) {
+          ctx.fillStyle = '#637381';
+          ctx.font = '600 11px Inter, ui-sans-serif, system-ui, sans-serif';
+          ctx.fillText('Sem dados.', 10, 18);
+          return;
+        }
+        const padding = { top: 8, right: 10, bottom: 34, left: 28 };
+        const chartWidth = width - padding.left - padding.right;
+        const chartHeight = height - padding.top - padding.bottom;
+        const maxValue = Math.max(...rows.map((row) => row.value), 1);
+        const barGap = 6;
+        const barWidth = Math.max(12, (chartWidth - barGap * (rows.length - 1)) / rows.length);
+        rows.forEach(function (row, index) {
+          const barHeight = Math.round((row.value / maxValue) * chartHeight);
+          const x = padding.left + index * (barWidth + barGap);
+          const y = padding.top + chartHeight - barHeight;
+          ctx.fillStyle = color;
+          ctx.fillRect(x, y, barWidth, barHeight);
+          ctx.fillStyle = '#102027';
+          ctx.font = '700 9px Inter, ui-sans-serif, system-ui, sans-serif';
+          ctx.fillText(String(row.value), x, Math.max(12, y - 3));
+          ctx.save();
+          ctx.translate(x + Math.min(14, barWidth / 2), padding.top + chartHeight + 8);
+          ctx.rotate(-0.55);
+          ctx.fillStyle = '#637381';
+          ctx.font = '600 8px Inter, ui-sans-serif, system-ui, sans-serif';
+          ctx.fillText(row.label.slice(0, 16), 0, 0);
+          ctx.restore();
+        });
+      }
+      document.addEventListener('DOMContentLoaded', function () {
+        drawBarChart('printIssueChart', printCharts.byIssue || [], '#0f766e');
+        drawBarChart('printStatusChart', printCharts.byStatus || [], '#b45309');
+        drawBarChart('printPeriodChart', printCharts.byPeriod || [], '#7c3aed');
+        drawBarChart('printMonthChart', printCharts.byMonth || [], '#2563eb');
+      });
+    </script>
+    {{ auto_print_script }}
+  </body>
+</html>

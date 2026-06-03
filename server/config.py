@@ -1,3 +1,14 @@
+"""
+Configuracao global da aplicacao de gestao de limpeza WC.
+
+Define caminhos, carrega variaveis de ambiente, configura logging
+e exporta todas as constantes utilizadas pelos restantes modulos do servidor.
+"""
+
+# ==========================================================
+# Caminhos e diretorios do projeto
+# ==========================================================
+
 import logging
 import os
 from pathlib import Path
@@ -14,6 +25,10 @@ UPLOAD_DIR = STATIC_DIR / "uploads"
 LOCAL_ENV_PATH = BASE_DIR / "server" / ".env"
 load_dotenv(LOCAL_ENV_PATH, override=False)
 
+# ==========================================================
+# Configuracao de logging
+# ==========================================================
+
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", "INFO").upper(),
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
@@ -22,7 +37,19 @@ logging.basicConfig(
 logger = logging.getLogger("wc_cleaning")
 
 
+# ==========================================================
+# Ligacao a base de dados
+# ==========================================================
+
 def with_required_sslmode(database_url):
+    """Garante que a URL da base de dados inclui sslmode=require se nao especificado.
+
+    Args:
+        database_url (str): URL de ligacao a base de dados PostgreSQL.
+
+    Returns:
+        str: URL da base de dados com sslmode=require aplicado.
+    """
     parsed = urlsplit(database_url)
     query = dict(parse_qsl(parsed.query, keep_blank_values=True))
     if "sslmode" not in query:
@@ -37,6 +64,10 @@ if not _RAW_DATABASE_URL:
 if not ADMIN_TOKEN:
     raise RuntimeError("ADMIN_TOKEN must not be empty")
 
+# ==========================================================
+# Variaveis de ambiente e constantes da aplicacao
+# ==========================================================
+
 DATABASE_URL = with_required_sslmode(_RAW_DATABASE_URL)
 PORT = int(os.environ.get("PORT", "4000"))
 
@@ -45,7 +76,7 @@ GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD", "").replace(" ", "")
 DEFAULT_ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "").strip()
 
 AUTO_INIT_DATABASE = os.environ.get("AUTO_INIT_DATABASE", "true").lower() in {"1", "true", "yes"}
-REPORT_RETENTION_DAYS = int(os.environ.get("REPORT_RETENTION_DAYS", "15"))
+REPORT_RETENTION_DAYS = int(os.environ.get("REPORT_RETENTION_DAYS", "0"))
 CLEANUP_INTERVAL_SECONDS = int(os.environ.get("CLEANUP_INTERVAL_SECONDS", str(24 * 60 * 60)))
 CLEANER_SESSION_DAYS = int(os.environ.get("CLEANER_SESSION_DAYS", "7"))
 CSRF_TOKEN_SECONDS = int(os.environ.get("CSRF_TOKEN_SECONDS", str(2 * 60 * 60)))

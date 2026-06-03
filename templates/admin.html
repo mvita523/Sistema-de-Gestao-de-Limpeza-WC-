@@ -19,18 +19,23 @@
         </form>
       </header>
 
-      {{ email_message }}
       {{ settings_message }}
       {{ users_message }}
 
-      <section class="stats stats-four">
-        <article><span>Reportes visiveis</span><strong>{{ visible_count }}</strong></article>
-        <article><span>Pendentes</span><strong>{{ pending_count }}</strong></article>
-        <article><span>Resolvidos</span><strong>{{ resolved_count }}</strong></article>
-        <article><span>Falsos Alertas</span><strong>{{ false_alert_count }}</strong></article>
+      <section class="kpi-grid">
+        <article class="kpi-card"><span>Total de Ocorrencias</span><strong>{{ total_count }}</strong></article>
+        <article class="kpi-card"><span>Pendentes</span><strong>{{ pending_count }}</strong></article>
+        <article class="kpi-card"><span>Em Resolucao</span><strong>{{ in_progress_count }}</strong></article>
+        <article class="kpi-card"><span>Resolvidas</span><strong>{{ resolved_count }}</strong></article>
+        <article class="kpi-card"><span>Taxa de Resolucao</span><strong>{{ resolution_rate }}</strong></article>
+        <article class="kpi-card"><span>Falsos Alertas</span><strong>{{ false_alert_count }}</strong></article>
       </section>
 
       <section class="analytics">
+        <article class="panel">
+          <h2>Ocorrencias por mes</h2>
+          <canvas class="chart-canvas" id="monthChart" height="220"></canvas>
+        </article>
         <article class="panel">
           <h2>Reportes por dia</h2>
           <canvas class="chart-canvas" id="dayChart" height="220"></canvas>
@@ -50,6 +55,28 @@
           <h2>Notificacoes por categoria</h2>
           <canvas class="chart-canvas" id="categoryChart" height="220"></canvas>
         </article>
+        <article class="panel">
+          <h2>Estados dos relatorios</h2>
+          <canvas class="chart-canvas" id="statusChart" height="220"></canvas>
+        </article>
+        <article class="panel">
+          <h2>Relatorios por periodo</h2>
+          <canvas class="chart-canvas" id="periodChart" height="220"></canvas>
+        </article>
+        <article class="panel">
+          <h2>Relatorio mensal</h2>
+          <form class="monthly-form" method="get" action="/admin/monthly-report">
+            <input type="month" name="month" value="{{ month_query }}">
+            <button class="button button-secondary" type="submit">Abrir relatorio</button>
+            <a class="button button-success" href="/admin/monthly-report.pdf?month={{ month_query }}">Exportar PDF</a>
+          </form>
+          <div class="monthly-summary">
+            <p><strong>{{ monthly_total }}</strong><span>Total do mes</span></p>
+            <p><strong>{{ monthly_resolved }}</strong><span>Resolvidas</span></p>
+            <p><strong>{{ monthly_pending }}</strong><span>Pendentes</span></p>
+            <p><strong>{{ monthly_resolution_rate }}</strong><span>Taxa de resolucao</span></p>
+          </div>
+        </article>
       </section>
 
       <section class="panel reports">
@@ -57,57 +84,151 @@
           <select name="status">{{ status_options }}</select>
           <select name="categoria_local" id="filterCategoria">{{ category_options }}</select>
           <select name="subcategoria_local" id="filterSubcategoria">{{ subcategory_options }}</select>
+          <select name="issue_type">{{ issue_filter_options }}</select>
+          <select name="curso">{{ course_filter_options }}</select>
           <select name="periodo">{{ periodo_options }}</select>
-          <input type="text" name="cleaner_name" placeholder="Pesquisar funcionario..." value="{{ cleaner_name_query }}">
+          <input type="date" name="date_from" value="{{ date_from_query }}">
+          <input type="date" name="date_to" value="{{ date_to_query }}">
           <button class="button button-secondary" type="submit">Pesquisar</button>
           <a class="button button-secondary btn-outline" href="/admin">Limpar</a>
         </form>
-        <form class="email-settings" method="post" action="/admin/notification-email">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-          <label>
-            <span>Email que recebe notificacoes</span>
-            <input type="email" name="notification_email" value="{{ notification_email }}" required>
-          </label>
-          <button class="button button-secondary" type="submit">Guardar email</button>
-        </form>
-        <div class="report-list">
-          {{ report_rows }}
+        <div class="table-toolbar">
+          <input type="search" id="reportSearch" placeholder="Pesquisa instantanea na tabela...">
+          <div class="report-actions">
+            <a class="button button-secondary" href="/admin/reports/print?{{ current_query }}" target="_blank" rel="noopener">Imprimir Relatorio</a>
+            <a class="button button-success" href="/admin/reports/export-pdf?{{ current_query }}" target="_blank" rel="noopener">Exportar PDF</a>
+            <a class="button button-secondary" href="/admin/reports/export-excel?{{ current_query }}">Exportar Excel</a>
+          </div>
+        </div>
+        <div class="table-shell">
+          <table class="report-table" id="reportTable">
+            <thead>
+              <tr>
+                <th data-sort="number">ID</th>
+                <th data-sort="text">Data</th>
+                <th data-sort="text">Local</th>
+                <th data-sort="text">Categoria</th>
+                <th data-sort="text">Periodo</th>
+                <th data-sort="text">Estado</th>
+                <th data-sort="text">Espera</th>
+                <th data-sort="text">Resolucao</th>
+                <th data-sort="text">Resolvido Por</th>
+                <th data-sort="text">Fotos</th>
+                <th>Acoes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {{ report_rows }}
+            </tbody>
+          </table>
+        </div>
+        <div class="pagination-row">
+          <span id="paginationInfo" class="muted"></span>
+          <div class="report-actions">
+            <button class="button button-secondary" id="prevPage" type="button">Anterior</button>
+            <button class="button button-secondary" id="nextPage" type="button">Seguinte</button>
+          </div>
         </div>
       </section>
 
-   
+
 
       <section class="panel users-panel">
-        <h2>Utilizadores da limpeza</h2>
-        <form class="user-form" method="post" action="/admin/cleaning-users">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-          <label>
-            <span>Nome</span>
-            <input type="text" name="name" required>
-          </label>
-          <label>
-            <span>Utilizador</span>
-            <input type="text" name="username" required>
-          </label>
-          <label>
-            <span>Email</span>
-            <input type="email" name="email" placeholder="email@exemplo.com">
-          </label>
-          <label>
-            <span>Palavra-passe</span>
-            <input type="password" name="password" minlength="6" required>
-          </label>
-          <button class="button button-secondary" type="submit">Criar utilizador</button>
-        </form>
-        <form class="user-search-row" method="get" action="/admin">
-          <input type="text" name="user_search" placeholder="Pesquisar por nome..." value="{{ user_search_query }}">
-          <button class="button button-secondary btn-outline" type="submit">Pesquisar</button>
-          <a class="button button-secondary btn-outline" href="/admin">Limpar</a>
-        </form>
-        <div class="user-list">
-          {{ cleaning_user_rows }}
+        <div class="section-header">
+          <h2>Utilizadores da limpeza</h2>
+          <button class="button button-success" type="button" id="openUserModal">Novo Utilizador</button>
+        </div>
+
+        <section class="stats stats-three compact-stats">
+          <article><span>Total</span><strong>{{ cleaning_users_total }}</strong></article>
+          <article><span>Recebem notificacoes</span><strong>{{ cleaning_users_notify_count }}</strong></article>
+          <article><span>Nao recebem</span><strong>{{ cleaning_users_no_notify_count }}</strong></article>
+        </section>
+
+        <div class="table-toolbar">
+          <input type="search" id="userSearch" placeholder="Pesquisar por nome, utilizador ou email...">
+          <select id="userFilter">
+            <option value="all">Todos os utilizadores</option>
+            <option value="notify">Recebem notificacoes</option>
+            <option value="no-notify">Nao recebem notificacoes</option>
+          </select>
+        </div>
+
+        <div class="table-shell">
+          <table class="report-table user-table" id="userTable">
+            <thead>
+              <tr>
+                <th data-sort="text">Nome</th>
+                <th data-sort="text">Utilizador</th>
+                <th data-sort="text">Email</th>
+                <th>Palavra-passe</th>
+                <th>Notificacoes</th>
+                <th>Acoes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {{ cleaning_user_rows }}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="pagination-row">
+          <span id="userPaginationInfo" class="muted"></span>
+          <div class="report-actions">
+            <button class="button button-secondary" id="prevUserPage" type="button">Anterior</button>
+            <button class="button button-secondary" id="nextUserPage" type="button">Seguinte</button>
+          </div>
         </div>
       </section>
+
+      <div class="modal-backdrop" id="adminPhotosModal" hidden>
+        <div class="modal-panel photo-modal-panel" role="dialog" aria-modal="true" aria-labelledby="adminPhotosTitle">
+          <div class="section-header">
+            <h2 id="adminPhotosTitle">Fotos do relatorio</h2>
+            <button class="button button-secondary" type="button" id="closeAdminPhotos">Fechar</button>
+          </div>
+          <div class="photo-report-meta" id="adminPhotoMeta"></div>
+          <div class="photo-modal-grid">
+            <figure>
+              <figcaption>Foto da Ocorrencia</figcaption>
+              <div id="adminOccurrencePhotoSlot" class="photo-modal-slot">Sem foto disponivel</div>
+            </figure>
+            <figure>
+              <figcaption>Foto da Resolucao</figcaption>
+              <div id="adminResolutionPhotoSlot" class="photo-modal-slot">Sem foto disponivel</div>
+            </figure>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-backdrop" id="userModal" hidden>
+        <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="newUserTitle">
+          <div class="section-header">
+            <h2 id="newUserTitle">Novo Utilizador</h2>
+            <button class="button button-secondary" type="button" id="closeUserModal">Fechar</button>
+          </div>
+          <form class="modal-form" method="post" action="/admin/cleaning-users">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label>
+              <span>Nome</span>
+              <input type="text" name="name" required>
+            </label>
+            <label>
+              <span>Utilizador</span>
+              <input type="text" name="username" required>
+            </label>
+            <label>
+              <span>Email</span>
+              <input type="email" name="email" placeholder="email@exemplo.com">
+            </label>
+            <label>
+              <span>Palavra-passe</span>
+              <input type="password" name="password" minlength="8" required>
+            </label>
+            <button class="button button-success" type="submit">Criar utilizador</button>
+          </form>
+        </div>
+      </div>
     </main>
     <script>
       const dashboardCharts = JSON.parse('{{ chart_payload }}');
@@ -115,6 +236,7 @@
       const categoriaSelect = document.getElementById('filterCategoria');
       const subcategoriaSelect = document.getElementById('filterSubcategoria');
       const subcategoryData = {{ subcategory_options_json }};
+      const selectedSubcategory = '{{ subcategoria_query }}';
 
       function syncSubcategories() {
         const selectedCategory = categoriaSelect.value || 'wc';
@@ -124,6 +246,7 @@
           const opt = document.createElement('option');
           opt.value = label;
           opt.textContent = label;
+          if (label === selectedSubcategory) opt.selected = true;
           subcategoriaSelect.appendChild(opt);
         });
       }
@@ -136,15 +259,15 @@
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
         const ratio = window.devicePixelRatio || 1;
-        const width = Math.min(canvas.parentElement.clientWidth, window.innerWidth - 40);
-        const height = 220;
+        const width = Math.min(canvas.parentElement.clientWidth, window.innerWidth - 32);
+        const height = 200;
 
         ctx.setTransform(1, 0, 0, 1, 0, 0);
 
         canvas.width = width * ratio;
         canvas.height = height * ratio;
 
-        canvas.style.width = '100%';
+        canvas.style.width = width + 'px';
         canvas.style.maxWidth = '100%';
         canvas.style.height = height + 'px';
         ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
@@ -152,17 +275,17 @@
 
         if (!rows.length) {
           ctx.fillStyle = '#637381';
-          ctx.font = '600 14px Inter, sans-serif';
-          ctx.fillText('Sem dados para mostrar.', 12, 28);
+          ctx.font = '600 14px Inter, ui-sans-serif, system-ui, sans-serif';
+          ctx.fillText('Sem dados para mostrar.', 10, 22);
           return;
         }
 
-        const padding = { top: 14, right: 18, bottom: 48, left: 42 };
+        const padding = { top: 14, right: 14, bottom: 44, left: 36 };
         const chartWidth = width - padding.left - padding.right;
         const chartHeight = height - padding.top - padding.bottom;
         const maxValue = Math.max(...rows.map((row) => row.value), 1);
-        const barGap = 10;
-        const barWidth = Math.max(16, (chartWidth - barGap * (rows.length - 1)) / rows.length);
+        const barGap = 8;
+        const barWidth = Math.max(14, (chartWidth - barGap * (rows.length - 1)) / rows.length);
 
         ctx.strokeStyle = '#dbe4f0';
         ctx.beginPath();
@@ -178,26 +301,292 @@
           ctx.fillStyle = color;
           ctx.fillRect(x, y, barWidth, barHeight);
           ctx.fillStyle = '#102027';
-          ctx.font = '800 12px Inter, sans-serif';
-          ctx.fillText(String(row.value), x, Math.max(14, y - 6));
+          ctx.font = '700 12px Inter, ui-sans-serif, system-ui, sans-serif';
+          ctx.fillText(String(row.value), x, Math.max(14, y - 5));
           ctx.save();
-          ctx.translate(x + Math.min(24, barWidth / 2), padding.top + chartHeight + 14);
+          ctx.translate(x + Math.min(20, barWidth / 2), padding.top + chartHeight + 12);
           ctx.rotate(-0.55);
           ctx.fillStyle = '#637381';
-          ctx.font = '700 11px Inter, sans-serif';
-          ctx.fillText(row.label.slice(0, 22), 0, 0);
+          ctx.font = '600 11px Inter, ui-sans-serif, system-ui, sans-serif';
+          ctx.fillText(row.label.slice(0, 18), 0, 0);
           ctx.restore();
         });
       }
 
       function renderCharts() {
+        drawBarChart('monthChart', dashboardCharts.byMonth, '#7c3aed');
         drawBarChart('dayChart', dashboardCharts.byDay, '#2563eb');
         drawBarChart('issueChart', dashboardCharts.byIssue, '#0f766e');
         drawBarChart('categoryChart', dashboardCharts.byCategory, '#b45309');
+        drawBarChart('statusChart', dashboardCharts.byStatus, '#b45309');
+        drawBarChart('periodChart', dashboardCharts.byPeriod || [], '#7c3aed');
+      }
+
+      function setupReportTable() {
+        const table = document.getElementById('reportTable');
+        const search = document.getElementById('reportSearch');
+        const prev = document.getElementById('prevPage');
+        const next = document.getElementById('nextPage');
+        const info = document.getElementById('paginationInfo');
+        if (!table || !search || !prev || !next || !info) return;
+        const tbody = table.querySelector('tbody');
+        let rows = Array.from(tbody.querySelectorAll('tr')).filter((row) => row.children.length > 1);
+        let filtered = rows.slice();
+        let page = 1;
+        const pageSize = 12;
+
+        function renderTable() {
+          rows.forEach((row) => row.hidden = true);
+          const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+          page = Math.min(page, totalPages);
+          const start = (page - 1) * pageSize;
+          filtered.slice(start, start + pageSize).forEach((row) => row.hidden = false);
+          info.textContent = filtered.length ? `Pagina ${page} de ${totalPages} · ${filtered.length} registos` : 'Sem registos';
+          prev.disabled = page <= 1;
+          next.disabled = page >= totalPages;
+        }
+
+        search.addEventListener('input', function () {
+          const term = search.value.trim().toLowerCase();
+          filtered = rows.filter((row) => (row.dataset.search || row.textContent.toLowerCase()).includes(term));
+          page = 1;
+          renderTable();
+        });
+
+        table.querySelectorAll('th[data-sort]').forEach(function (header, index) {
+          header.addEventListener('click', function () {
+            const direction = header.dataset.direction === 'asc' ? 'desc' : 'asc';
+            table.querySelectorAll('th[data-sort]').forEach((cell) => cell.dataset.direction = '');
+            header.dataset.direction = direction;
+            const numeric = header.dataset.sort === 'number';
+            rows.sort(function (a, b) {
+              const av = a.children[index]?.dataset.sort || a.children[index]?.textContent || '';
+              const bv = b.children[index]?.dataset.sort || b.children[index]?.textContent || '';
+              const result = numeric ? parseFloat(av.replace(/\D/g, '') || '0') - parseFloat(bv.replace(/\D/g, '') || '0') : av.localeCompare(bv, 'pt');
+              return direction === 'asc' ? result : -result;
+            });
+            rows.forEach((row) => tbody.appendChild(row));
+            search.dispatchEvent(new Event('input'));
+          });
+        });
+
+        prev.addEventListener('click', function () {
+          page -= 1;
+          renderTable();
+        });
+        next.addEventListener('click', function () {
+          page += 1;
+          renderTable();
+        });
+        renderTable();
+      }
+
+      function setupUserTable() {
+        const table = document.getElementById('userTable');
+        const search = document.getElementById('userSearch');
+        const filter = document.getElementById('userFilter');
+        const prev = document.getElementById('prevUserPage');
+        const next = document.getElementById('nextUserPage');
+        const info = document.getElementById('userPaginationInfo');
+        if (!table || !search || !filter || !prev || !next || !info) return;
+        const tbody = table.querySelector('tbody');
+        let rows = Array.from(tbody.querySelectorAll('tr')).filter((row) => row.children.length > 1);
+        let filtered = rows.slice();
+        let page = 1;
+        const pageSize = 8;
+
+        function applyFilters() {
+          const term = search.value.trim().toLowerCase();
+          const mode = filter.value;
+          filtered = rows.filter(function (row) {
+            const matchesSearch = (row.dataset.search || row.textContent.toLowerCase()).includes(term);
+            const receives = row.dataset.notify === 'yes';
+            const falseAlerts = parseInt(row.dataset.falseAlerts || '0', 10);
+            const matchesFilter =
+              mode === 'all' ||
+              (mode === 'notify' && receives) ||
+              (mode === 'no-notify' && !receives) ||
+              (mode === 'false-alerts' && falseAlerts > 0);
+            return matchesSearch && matchesFilter;
+          });
+          page = 1;
+          renderTable();
+        }
+
+        function renderTable() {
+          rows.forEach((row) => row.hidden = true);
+          const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+          page = Math.min(page, totalPages);
+          const start = (page - 1) * pageSize;
+          filtered.slice(start, start + pageSize).forEach((row) => row.hidden = false);
+          info.textContent = filtered.length ? `Pagina ${page} de ${totalPages} · ${filtered.length} utilizadores` : 'Sem utilizadores';
+          prev.disabled = page <= 1;
+          next.disabled = page >= totalPages;
+        }
+
+        table.querySelectorAll('th[data-sort]').forEach(function (header, index) {
+          header.addEventListener('click', function () {
+            const direction = header.dataset.direction === 'asc' ? 'desc' : 'asc';
+            table.querySelectorAll('th[data-sort]').forEach((cell) => cell.dataset.direction = '');
+            header.dataset.direction = direction;
+            const numeric = header.dataset.sort === 'number';
+            rows.sort(function (a, b) {
+              const av = a.children[index]?.dataset.sort || a.children[index]?.textContent || '';
+              const bv = b.children[index]?.dataset.sort || b.children[index]?.textContent || '';
+              const result = numeric ? parseFloat(av || '0') - parseFloat(bv || '0') : av.localeCompare(bv, 'pt');
+              return direction === 'asc' ? result : -result;
+            });
+            rows.forEach((row) => tbody.appendChild(row));
+            applyFilters();
+          });
+        });
+
+        rows.forEach(function (row) {
+          const editButton = row.querySelector('.action-edit-button');
+          const saveButton = row.querySelector('.action-save-button');
+          const cancelButton = row.querySelector('.action-cancel-button');
+          const passwordToggle = row.querySelector('.password-toggle-button');
+          const passwordInput = row.querySelector('.password-input');
+          const notifyCheckbox = row.querySelector('.notify-checkbox');
+          const nameInput = row.querySelector('input[name="name"]');
+          const usernameInput = row.querySelector('input[name="username"]');
+          const emailInput = row.querySelector('input[name="email"]');
+
+          const initialValues = {
+            name: nameInput ? nameInput.value : '',
+            username: usernameInput ? usernameInput.value : '',
+            email: emailInput ? emailInput.value : '',
+            receives_notifications: notifyCheckbox ? notifyCheckbox.checked : false,
+          };
+
+          function setEditing(editing) {
+            row.classList.toggle('is-editing', editing);
+            row.querySelectorAll('.row-input').forEach(function (input) {
+              input.disabled = !editing;
+              input.readOnly = !editing;
+            });
+            if (notifyCheckbox) notifyCheckbox.disabled = !editing;
+            if (saveButton) saveButton.hidden = !editing;
+            if (cancelButton) cancelButton.hidden = !editing;
+            if (editButton) editButton.hidden = editing;
+            if (!editing && passwordInput) {
+              passwordInput.value = '';
+              passwordInput.type = 'password';
+            }
+            if (editing && passwordInput) passwordInput.focus();
+          }
+
+          if (editButton) {
+            editButton.addEventListener('click', function () {
+              setEditing(true);
+            });
+          }
+
+          if (cancelButton) {
+            cancelButton.addEventListener('click', function () {
+              if (nameInput) nameInput.value = initialValues.name;
+              if (usernameInput) usernameInput.value = initialValues.username;
+              if (emailInput) emailInput.value = initialValues.email;
+              if (notifyCheckbox) notifyCheckbox.checked = initialValues.receives_notifications;
+              setEditing(false);
+            });
+          }
+
+          if (passwordToggle && passwordInput) {
+            passwordToggle.addEventListener('click', function () {
+              passwordInput.type = passwordInput.type === 'password' ? 'text' : 'password';
+            });
+          }
+        });
+
+        search.addEventListener('input', applyFilters);
+        filter.addEventListener('change', applyFilters);
+        prev.addEventListener('click', function () {
+          page -= 1;
+          renderTable();
+        });
+        next.addEventListener('click', function () {
+          page += 1;
+          renderTable();
+        });
+        renderTable();
+      }
+
+      function setupUserModal() {
+        const modal = document.getElementById('userModal');
+        const openButton = document.getElementById('openUserModal');
+        const closeButton = document.getElementById('closeUserModal');
+        if (!modal || !openButton || !closeButton) return;
+        openButton.addEventListener('click', function () {
+          modal.hidden = false;
+          const firstInput = modal.querySelector('input[name="name"]');
+          if (firstInput) firstInput.focus();
+        });
+        closeButton.addEventListener('click', function () {
+          modal.hidden = true;
+        });
+        modal.addEventListener('click', function (event) {
+          if (event.target === modal) modal.hidden = true;
+        });
+      }
+
+      function setupAdminPhotos() {
+        const modal = document.getElementById('adminPhotosModal');
+        const closeButton = document.getElementById('closeAdminPhotos');
+        const occurrenceSlot = document.getElementById('adminOccurrencePhotoSlot');
+        const resolutionSlot = document.getElementById('adminResolutionPhotoSlot');
+        const meta = document.getElementById('adminPhotoMeta');
+        if (!modal || !closeButton || !occurrenceSlot || !resolutionSlot || !meta) return;
+
+        function fillSlot(slot, src, alt) {
+          slot.innerHTML = '';
+          if (!src) {
+            slot.textContent = 'Sem foto disponivel';
+            return;
+          }
+          const link = document.createElement('a');
+          link.href = src;
+          link.target = '_blank';
+          link.rel = 'noopener';
+          const img = document.createElement('img');
+          img.src = src;
+          img.alt = alt;
+          link.appendChild(img);
+          slot.appendChild(link);
+        }
+
+        document.querySelectorAll('.admin-photos-button').forEach(function (button) {
+          button.addEventListener('click', function () {
+            meta.innerHTML = [
+              ['ID', button.dataset.reportId || ''],
+              ['Data', button.dataset.reportDate || ''],
+              ['Local', button.dataset.reportLocation || ''],
+              ['Categoria', button.dataset.reportCategory || ''],
+              ['Estado', button.dataset.reportStatus || ''],
+              ['Funcionario', button.dataset.reportResponsible || 'Sem responsavel']
+            ].map(function (item) {
+              return '<p><strong>' + item[0] + ':</strong> ' + item[1] + '</p>';
+            }).join('');
+            fillSlot(occurrenceSlot, button.dataset.occurrencePhoto || '', 'Foto da ocorrencia');
+            fillSlot(resolutionSlot, button.dataset.resolutionPhoto || '', 'Foto da resolucao');
+            modal.hidden = false;
+          });
+        });
+
+        closeButton.addEventListener('click', function () {
+          modal.hidden = true;
+        });
+        modal.addEventListener('click', function (event) {
+          if (event.target === modal) modal.hidden = true;
+        });
       }
 
       document.addEventListener('DOMContentLoaded', function () {
     renderCharts();
+    setupReportTable();
+    setupUserTable();
+    setupUserModal();
+    setupAdminPhotos();
 
     const deleteForms = document.querySelectorAll(
         'form[action*="/admin/cleaning-users/delete/"]'
@@ -216,12 +605,40 @@
     });
 });
 
-let resizeTimer;
+      function setupResponsiveTable() {
+        const table = document.getElementById('reportTable');
+        if (!table) return;
+        if (window.innerWidth < 900) {
+          table.parentElement.style.overflowX = 'auto';
+          table.style.minWidth = '1100px';
+        } else {
+          table.parentElement.style.overflowX = 'visible';
+          table.style.minWidth = '';
+        }
+      }
 
-window.addEventListener('resize', function () {
-    clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(renderCharts, 200);
-});
+      function setupResponsiveForms() {
+        const filters = document.querySelector('.filters');
+        const actions = document.querySelector('.table-toolbar .report-actions');
+        if (!filters || !actions) return;
+        if (window.innerWidth < 760) {
+          filters.style.flexWrap = 'wrap';
+          actions.style.flexWrap = 'wrap';
+          actions.style.justifyContent = 'flex-start';
+        } else {
+          filters.style.flexWrap = 'nowrap';
+          actions.style.flexWrap = 'wrap';
+          actions.style.justifyContent = 'flex-end';
+        }
+      }
+
+      function applyResponsive() {
+        setupResponsiveTable();
+        setupResponsiveForms();
+      }
+
+      window.addEventListener('resize', applyResponsive);
+      window.addEventListener('DOMContentLoaded', applyResponsive);
     </script>
   </body>
 </html>

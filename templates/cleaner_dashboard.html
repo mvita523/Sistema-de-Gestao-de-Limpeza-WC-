@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Reportes pendentes Kimpa Vita</title>
+    <title>Reportes Kimpa Vita</title>
     <link rel="stylesheet" href="/static/styles.css">
   </head>
   <body>
@@ -11,7 +11,7 @@
       <header class="topbar">
         <div>
           <p class="eyebrow">Limpeza</p>
-          <h1>Reportes pendentes</h1>
+          <h1>Ocorrencias de limpeza</h1>
           <p class="muted">Sessao iniciada como {{ cleaner_name }}</p>
         </div>
         <form method="post" action="/cleaner/logout">
@@ -20,35 +20,206 @@
         </form>
       </header>
 
-      <section class="stats">
+      <section class="stats stats-five">
+        <article><span>Total</span><strong>{{ total_count }}</strong></article>
         <article><span>Pendentes</span><strong>{{ pending_count }}</strong></article>
+        <article><span>Em resolucao</span><strong>{{ in_progress_count }}</strong></article>
         <article><span>Resolvidos</span><strong>{{ resolved_count }}</strong></article>
         <article><span>Falsos alertas</span><strong>{{ false_alert_count }}</strong></article>
       </section>
 
       <section class="panel account-panel">
-        <h2>Dados do usuário</h2>
+        <h2>Dados do usuario</h2>
         <p><strong>Nome de utilizador:</strong> {{ cleaner_username }}</p>
         <p><strong>Email associado:</strong> {{ cleaner_email }}</p>
         <p><strong>Senha:</strong> ********</p>
       </section>
 
       <section class="panel reports">
-        <div class="report-list">
-          {{ report_rows }}
+        <div class="table-toolbar">
+          <input type="search" id="cleanerSearch" placeholder="Pesquisar por ID, local, categoria ou estado...">
+          <select id="cleanerStatusFilter">
+            <option value="all">Todos</option>
+            <option value="pending">Pendentes</option>
+            <option value="in_progress">Em Resolucao</option>
+            <option value="resolved">Resolvidos</option>
+            <option value="false_alert">Falsos Alertas</option>
+          </select>
+        </div>
+        <div class="table-shell">
+          <table class="report-table cleaner-table" id="cleanerTable">
+            <thead>
+              <tr>
+                <th data-sort="number">ID</th>
+                <th data-sort="text">Data</th>
+                <th data-sort="text">Local</th>
+                <th data-sort="text">Categoria</th>
+                <th data-sort="text">Periodo</th>
+                <th data-sort="text">Estado</th>
+                <th data-sort="text">Tempo de Espera</th>
+                <th data-sort="text">Tempo de Resolucao</th>
+                <th data-sort="text">Observacao</th>
+                <th>Fotos</th>
+                <th>Acoes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {{ report_rows }}
+            </tbody>
+          </table>
+        </div>
+        <div class="pagination-row">
+          <span id="cleanerPaginationInfo" class="muted"></span>
+          <div class="report-actions">
+            <button class="button button-secondary" id="prevCleanerPage" type="button">Anterior</button>
+            <button class="button button-secondary" id="nextCleanerPage" type="button">Seguinte</button>
+          </div>
         </div>
       </section>
+
+      <div class="modal-backdrop" id="cleanerPhotosModal" hidden>
+        <div class="modal-panel photo-modal-panel" role="dialog" aria-modal="true" aria-labelledby="cleanerPhotosTitle">
+          <div class="section-header">
+            <h2 id="cleanerPhotosTitle">Fotos da ocorrencia</h2>
+              <button class="button button-secondary" type="button" id="closeCleanerPhotos">Fechar</button>
+          </div>
+          <div class="photo-modal-grid">
+            <figure>
+              <figcaption>Foto da Ocorrencia</figcaption>
+              <div id="occurrencePhotoSlot" class="photo-modal-slot">Sem foto disponivel</div>
+            </figure>
+            <figure>
+              <figcaption>Foto da Resolucao</figcaption>
+              <div id="resolutionPhotoSlot" class="photo-modal-slot">Sem foto disponivel</div>
+            </figure>
+          </div>
+        </div>
+      </div>
     </main>
     <script>
       document.addEventListener('DOMContentLoaded', function () {
         document.querySelectorAll('.resolve-evidence').forEach(function (form) {
           const fileInput = form.querySelector('.resolve-file');
           const button = form.querySelector('.resolve-button');
+          if (!fileInput || !button) return;
           fileInput.addEventListener('change', function () {
             button.disabled = !fileInput.files.length;
           });
         });
+        setupCleanerTable();
+        setupCleanerPhotos();
       });
+
+      function setupCleanerPhotos() {
+        const modal = document.getElementById('cleanerPhotosModal');
+        const closeButton = document.getElementById('closeCleanerPhotos');
+        const occurrenceSlot = document.getElementById('occurrencePhotoSlot');
+        const resolutionSlot = document.getElementById('resolutionPhotoSlot');
+        if (!modal || !closeButton || !occurrenceSlot || !resolutionSlot) return;
+
+        function fillSlot(slot, src, alt) {
+          slot.innerHTML = '';
+          if (!src) {
+            slot.textContent = 'Sem foto disponivel';
+            return;
+          }
+          const link = document.createElement('a');
+          link.href = src;
+          link.target = '_blank';
+          link.rel = 'noopener';
+          const img = document.createElement('img');
+          img.src = src;
+          img.alt = alt;
+          link.appendChild(img);
+          slot.appendChild(link);
+        }
+
+        document.querySelectorAll('.photos-button').forEach(function (button) {
+          button.addEventListener('click', function () {
+            fillSlot(occurrenceSlot, button.dataset.occurrencePhoto || '', 'Foto da ocorrencia');
+            fillSlot(resolutionSlot, button.dataset.resolutionPhoto || '', 'Foto da resolucao');
+            modal.hidden = false;
+          });
+        });
+
+        closeButton.addEventListener('click', function () {
+          modal.hidden = true;
+        });
+        modal.addEventListener('click', function (event) {
+          if (event.target === modal) modal.hidden = true;
+        });
+      }
+
+      function setupCleanerTable() {
+        const table = document.getElementById('cleanerTable');
+        const search = document.getElementById('cleanerSearch');
+        const filter = document.getElementById('cleanerStatusFilter');
+        const prev = document.getElementById('prevCleanerPage');
+        const next = document.getElementById('nextCleanerPage');
+        const info = document.getElementById('cleanerPaginationInfo');
+        if (!table || !search || !filter || !prev || !next || !info) return;
+        const tbody = table.querySelector('tbody');
+        let rows = Array.from(tbody.querySelectorAll('tr')).filter((row) => row.children.length > 1);
+        let filtered = rows.slice();
+        let page = 1;
+        const pageSize = 12;
+
+        function applyFilters() {
+          const term = search.value.trim().toLowerCase();
+          const mode = filter.value;
+          filtered = rows.filter(function (row) {
+            const matchesSearch = (row.dataset.search || row.textContent.toLowerCase()).includes(term);
+            const isFalseAlert = row.dataset.falseAlert === 'yes';
+            const matchesFilter =
+              mode === 'all' ||
+              (mode === 'false_alert' && isFalseAlert) ||
+              (mode !== 'false_alert' && row.dataset.status === mode && !isFalseAlert);
+            return matchesSearch && matchesFilter;
+          });
+          page = 1;
+          renderTable();
+        }
+
+        function renderTable() {
+          rows.forEach((row) => row.hidden = true);
+          const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+          page = Math.min(page, totalPages);
+          const start = (page - 1) * pageSize;
+          filtered.slice(start, start + pageSize).forEach((row) => row.hidden = false);
+          info.textContent = filtered.length ? `Pagina ${page} de ${totalPages} · ${filtered.length} ocorrencias` : 'Sem ocorrencias';
+          prev.disabled = page <= 1;
+          next.disabled = page >= totalPages;
+        }
+
+        table.querySelectorAll('th[data-sort]').forEach(function (header, index) {
+          header.addEventListener('click', function () {
+            const direction = header.dataset.direction === 'asc' ? 'desc' : 'asc';
+            table.querySelectorAll('th[data-sort]').forEach((cell) => cell.dataset.direction = '');
+            header.dataset.direction = direction;
+            const numeric = header.dataset.sort === 'number';
+            rows.sort(function (a, b) {
+              const av = a.children[index]?.dataset.sort || a.children[index]?.textContent || '';
+              const bv = b.children[index]?.dataset.sort || b.children[index]?.textContent || '';
+              const result = numeric ? parseFloat(av.replace(/\D/g, '') || '0') - parseFloat(bv.replace(/\D/g, '') || '0') : av.localeCompare(bv, 'pt');
+              return direction === 'asc' ? result : -result;
+            });
+            rows.forEach((row) => tbody.appendChild(row));
+            applyFilters();
+          });
+        });
+
+        search.addEventListener('input', applyFilters);
+        filter.addEventListener('change', applyFilters);
+        prev.addEventListener('click', function () {
+          page -= 1;
+          renderTable();
+        });
+        next.addEventListener('click', function () {
+          page += 1;
+          renderTable();
+        });
+        renderTable();
+      }
     </script>
   </body>
 </html>

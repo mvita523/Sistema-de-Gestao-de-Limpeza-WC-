@@ -1,3 +1,10 @@
+"""
+Ponto de entrada da aplicacao de gestao de limpeza WC.
+
+Inicializa a base de dados, executa limpeza de reportes antigos,
+inicia o agendador de limpeza periodica e arranca o servidor HTTP.
+"""
+
 import sys
 from http.server import ThreadingHTTPServer
 from pathlib import Path
@@ -14,6 +21,11 @@ else:
 
 
 def main():
+    """Inicia o servidor HTTP da aplicacao.
+
+    Executa as operacoes de inicializacao e arranca o servidor em modo threading
+    para tratar multiplos pedidos em paralelo.
+    """
     logger.info("startup_begin")
     init_database()
     cleanup_old_reports()

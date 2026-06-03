@@ -72,8 +72,11 @@
         <button class="button button-primary" type="submit">Enviar</button>
       </form>
     </main>
+    <script type="application/json" id="local-options-data" hidden>
+      {{ local_options_json }}
+    </script>
     <script>
-      const localOptions = {{ local_options_json }};
+      const localOptions = JSON.parse(document.getElementById('local-options-data').textContent);
       const categorySelect = document.getElementById('categoria_local');
       const subcategorySelect = document.getElementById('subcategoria_local');
 

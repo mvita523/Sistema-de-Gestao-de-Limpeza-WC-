@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="pt-PT">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Visualizar Foto do Relatorio #{{ report_id }}</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <style>
+      .viewer-shell {
+        max-width: 760px;
+        margin: 0 auto;
+        padding: 24px;
+      }
+      .viewer-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 16px;
+        padding-bottom: 18px;
+        border-bottom: 1px solid #dbe4f0;
+      }
+      .photo-frame {
+        margin-top: 18px;
+        border: 1px solid #dbe4f0;
+        border-radius: 8px;
+        background: #fff;
+        padding: 12px;
+      }
+      .photo-frame img {
+        display: block;
+        width: 100%;
+        height: auto;
+        border-radius: 8px;
+      }
+      .actions {
+        margin-top: 16px;
+        display: flex;
+        gap: 10px;
+        justify-content: flex-end;
+        flex-wrap: wrap;
+      }
+      .viewer-meta {
+        margin-top: 16px;
+        display: grid;
+        gap: 6px;
+      }
+      .viewer-meta label {
+        color: #637381;
+        font-size: 0.78rem;
+        font-weight: 800;
+      }
+      .viewer-meta span {
+        color: #102027;
+        font-weight: 600;
+      }
+      @media print {
+        .actions {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="viewer-shell">
+      <header class="viewer-header">
+        <div>
+          <p class="eyebrow">Fotografia</p>
+          <h1>Relatorio #{{ report_id }}</h1>
+          <p class="muted">{{ photo_type == 'occurrence' and 'Foto da Ocorrencia' or 'Foto da Resolucao' }}</p>
+        </div>
+        <form method="post" action="/admin/logout">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="button button-secondary" type="submit">Sair</button>
+        </form>
+      </header>
+
+      <section class="panel">
+        <div class="viewer-meta">
+          <div><label>Data</label><span>{{ report_date }}</span></div>
+          <div><label>Local</label><span>{{ report_location }}</span></div>
+          <div><label>Categoria</label><span>{{ report_category }}</span></div>
+          <div><label>Estado</label><span>{{ report_status }}</span></div>
+        </div>
+
+        <div class="photo-frame">
+          <img src="{{ photo_url }}" alt="Foto do relatorio #{{ report_id }}" />
+        </div>
+
+        <div class="actions">
+          <button class="button button-secondary" type="button" onclick="window.print()">Imprimir Imagem</button>
+          <a class="button button-success" href="{{ photo_url }}" download>Download</a>
+          <a class="button button-secondary" href="/admin">Voltar</a>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

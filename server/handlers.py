@@ -1,12 +1,13 @@
 import json
 import re
 import secrets
+from datetime import datetime
 from email.parser import BytesParser
 from email.policy import default as email_policy
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlencode, urlparse
 
 import psycopg2
 
@@ -25,13 +26,17 @@ from .utils import (
     SubmissionRateLimiter,
     clean_text,
     day_key,
+    duration_seconds,
     escape,
     format_datetime,
+    format_duration,
+    get_period,
     is_valid_email,
     is_valid_password,
     is_valid_username,
     redirect_target,
     render_template,
+    waiting_level,
 )
 
 rate_limiter = SubmissionRateLimiter()
@@ -66,6 +71,16 @@ class AppHandler(BaseHTTPRequestHandler):
             return self.show_report(parse_qs(parsed.query))
         if parsed.path == "/admin":
             return self.show_admin(parse_qs(parsed.query))
+        if parsed.path == "/admin/monthly-report":
+            return self.show_monthly_report(parse_qs(parsed.query))
+        if parsed.path == "/admin/monthly-report.pdf":
+            return self.monthly_report_pdf(parse_qs(parsed.query))
+        if parsed.path == "/admin/reports/print":
+            return self.print_filtered_reports(parse_qs(parsed.query), auto_print=True)
+        if parsed.path == "/admin/reports/export-pdf":
+            return self.print_filtered_reports(parse_qs(parsed.query), auto_print=True)
+        if parsed.path == "/admin/reports/export-excel":
+            return self.export_filtered_reports_excel(parse_qs(parsed.query))
         if parsed.path == "/cleaner":
             return self.show_cleaner(parse_qs(parsed.query))
         if parsed.path == "/api/admin/notification-email":
@@ -74,6 +89,12 @@ class AppHandler(BaseHTTPRequestHandler):
             return self.static_file(STATIC_DIR / "styles.css", "text/css; charset=utf-8")
         if parsed.path.startswith("/static/uploads/"):
             return self.uploaded_file(parsed.path)
+        match = re.fullmatch(r"/admin/reports/(\d+)/print", parsed.path)
+        if match:
+            return self.print_report(int(match.group(1)))
+        match = re.fullmatch(r"/view-photo", parsed.path)
+        if match:
+            return self.view_photo(parse_qs(parsed.query))
         return self.not_found()
 
     def do_POST(self):
@@ -96,18 +117,24 @@ class AppHandler(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/admin/reports/(\d+)/resolve", parsed.path)
         if match:
             return self.resolve_report(int(match.group(1)))
+        match = re.fullmatch(r"/admin/reports/(\d+)/start", parsed.path)
+        if match:
+            return self.start_report(int(match.group(1)))
         match = re.fullmatch(r"/admin/reports/(\d+)/cancel", parsed.path)
         if match:
             return self.cancel_report(int(match.group(1)))
         match = re.fullmatch(r"/admin/cleaning-users/(\d+)/delete", parsed.path)
         if match:
             return self.delete_cleaning_user_form(int(match.group(1)))
-        match = re.fullmatch(r"/admin/cleaning-users/(\d+)/email", parsed.path)
+        match = re.fullmatch(r"/admin/cleaning-users/(\d+)/update", parsed.path)
         if match:
-            return self.update_cleaning_user_email_form(int(match.group(1)))
+            return self.update_cleaning_user_form(int(match.group(1)))
         match = re.fullmatch(r"/cleaner/reports/(\d+)/resolve", parsed.path)
         if match:
             return self.resolve_report_cleaner(int(match.group(1)))
+        match = re.fullmatch(r"/cleaner/reports/(\d+)/start", parsed.path)
+        if match:
+            return self.start_report_cleaner(int(match.group(1)))
         match = re.fullmatch(r"/cleaner/reports/(\d+)/false-alert", parsed.path)
         if match:
             return self.mark_false_alert_cleaner(int(match.group(1)))
@@ -296,6 +323,49 @@ class AppHandler(BaseHTTPRequestHandler):
         )
         return self.html_response(render_template("success.html"), HTTPStatus.CREATED)
 
+    def admin_filters_from_query(self, query):
+        status = clean_text((query.get("status") or ["all"])[0], 20)
+        location_id = clean_text((query.get("location_id") or ["all"])[0], 20)
+        categoria_local = clean_text((query.get("categoria_local") or ["all"])[0], 20)
+        subcategoria_local = clean_text((query.get("subcategoria_local") or [""])[0], 160)
+        issue_type = clean_text((query.get("issue_type") or ["all"])[0], 20)
+        curso = clean_text((query.get("curso") or ["all"])[0], 120)
+        date_from = clean_text((query.get("date_from") or [""])[0], 20)
+        date_to = clean_text((query.get("date_to") or [""])[0], 20)
+        month = clean_text((query.get("month") or [datetime.now().strftime("%Y-%m")])[0], 7)
+        if date_from and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date_from):
+            date_from = ""
+        if date_to and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date_to):
+            date_to = ""
+        if month and not re.fullmatch(r"\d{4}-\d{2}", month):
+            month = datetime.now().strftime("%Y-%m")
+        periodo = clean_text((query.get("periodo") or ["all"])[0], 20)
+        return {
+            "status": status,
+            "location_id": location_id,
+            "categoria_local": categoria_local,
+            "subcategoria_local": subcategoria_local,
+            "issue_type": issue_type,
+            "curso": curso,
+            "date_from": date_from,
+            "date_to": date_to,
+            "month": month,
+            "periodo": periodo,
+        }
+
+    def reports_for_filters(self, filters):
+        return database.filtered_reports(
+            filters["status"],
+            filters["location_id"],
+            categoria_local=filters["categoria_local"] if filters["categoria_local"] != "all" else None,
+            subcategoria_local=filters["subcategoria_local"] or None,
+            periodo=filters["periodo"] if filters["periodo"] != "all" else None,
+            issue_type=filters["issue_type"] if filters["issue_type"] != "all" else None,
+            curso=filters["curso"] if filters["curso"] != "all" else None,
+            date_from=filters["date_from"] or None,
+            date_to=filters["date_to"] or None,
+        )
+
     def show_admin(self, query):
         if not auth.valid_admin_cookie(self.headers):
             csrf_token, is_new = auth.get_or_create_csrf_token(self.headers)
@@ -303,46 +373,79 @@ class AppHandler(BaseHTTPRequestHandler):
             return self.html_response(body, csrf_token=csrf_token if is_new else None)
 
         csrf_token, is_new = auth.get_or_create_csrf_token(self.headers)
-        status = clean_text((query.get("status") or ["pending"])[0], 20)
-        location_id = clean_text((query.get("location_id") or ["all"])[0], 20)
-        categoria_local = clean_text((query.get("categoria_local") or ["all"])[0], 20)
-        periodo = clean_text((query.get("periodo") or ["all"])[0], 20)
-        cleaner_name = clean_text((query.get("cleaner_name") or [""])[0], 120)
-        user_search = clean_text((query.get("user_search") or [""])[0], 120)
-        reports = database.filtered_reports(status, location_id, categoria_local=categoria_local if categoria_local != "all" else None, periodo=periodo if periodo != "all" else None, resolved_by_name=cleaner_name or None)
-        all_reports = database.filtered_reports("all", "all")
+        filters = self.admin_filters_from_query(query)
+        reports = self.reports_for_filters(filters)
+        monthly_reports = database.monthly_reports(filters["month"]) if re.fullmatch(r"\d{4}-\d{2}", filters["month"]) else []
+        stats = self.dashboard_stats(reports)
+        monthly_stats = self.monthly_stats(monthly_reports)
         cleaning_users = database.list_cleaning_users()
-        if user_search:
-            cleaning_users = [u for u in cleaning_users if user_search.lower() in u["name"].lower()]
         for user in cleaning_users:
             user["false_alert_count"] = database.count_false_alerts_by_cleaner(user["id"])
+        false_alert_count = sum(1 for report in reports if report.get("falso_alerta"))
         body = render_template(
             "admin.html",
             csrf_token=escape(csrf_token),
-            email_message=self.email_message((query.get("email") or [""])[0]),
             settings_message=self.settings_message((query.get("settings") or [""])[0]),
             users_message=self.users_message((query.get("users") or [""])[0]),
-            notification_email=escape(email_service.get_notification_email()),
             cleaning_user_rows=self.cleaning_user_rows(cleaning_users=cleaning_users, csrf_token=csrf_token),
-            status_options=self.status_options(status),
-            category_options=self.category_options(categoria_local),
-            periodo_options=self.period_options(periodo),
-            subcategory_options=self.subcategory_options(categoria_local, ""),
+            cleaning_users_total=len(cleaning_users),
+            cleaning_users_notify_count=sum(1 for user in cleaning_users if user.get("receives_notifications")),
+            cleaning_users_no_notify_count=sum(1 for user in cleaning_users if not user.get("receives_notifications")),
+            total_count=len(reports),
+            pending_count=stats["pending_count"],
+            in_progress_count=stats["in_progress_count"],
+            resolved_count=stats["resolved_count"],
+            canceled_count=stats["canceled_count"],
+            resolution_rate=stats["resolution_rate"],
+            false_alert_count=false_alert_count,
+            cleaning_users_json=json.dumps([{
+                "id": u["id"],
+                "name": u["name"],
+                "username": u["username"],
+                "email": u["email"] or "",
+                "receives_notifications": u["receives_notifications"],
+                "active": u["active"],
+                "false_alert_count": u.get("false_alert_count", 0)
+            } for u in cleaning_users]),
+            status_options=self.status_options(filters["status"]),
+            category_options=self.category_options(filters["categoria_local"]),
+            issue_filter_options=self.issue_filter_options(filters["issue_type"]),
+            course_filter_options=self.course_filter_options(filters["curso"]),
+            periodo_options=self.period_options(filters["periodo"]),
+            subcategory_options=self.subcategory_options(filters["categoria_local"], filters["subcategoria_local"]),
             subcategory_options_json=json.dumps(LOCAL_SUBCATEGORY_OPTIONS),
-            report_rows=self.report_rows(reports, status, location_id, periodo, csrf_token),
-            visible_count=len(reports),
-            pending_count=sum(1 for report in all_reports if report["status"] == "pending"),
-            resolved_count=sum(1 for report in all_reports if report["status"] == "resolved"),
-            false_alert_count=sum(1 for report in all_reports if report.get("falso_alerta")),
-            top_cleaners_html=self.top_cleaners_html(all_reports),
-            top_course=escape(self.top_course(all_reports)),
-            cleaner_name_query=escape(cleaner_name),
-            user_search_query=escape(user_search),
+            report_rows=self.report_rows(
+                reports,
+                {
+                    "status": filters["status"],
+                    "categoria_local": filters["categoria_local"],
+                    "subcategoria_local": filters["subcategoria_local"],
+                    "periodo": filters["periodo"],
+                    "issue_type": filters["issue_type"],
+                    "curso": filters["curso"],
+                    "date_from": filters["date_from"],
+                    "date_to": filters["date_to"],
+                },
+                csrf_token,
+            ),
+            current_query=escape(urlencode({key: value for key, value in filters.items() if value and key != "month"})),
+            monthly_total=monthly_stats["total"],
+            monthly_resolved=monthly_stats["resolved"],
+            monthly_pending=monthly_stats["pending"],
+            monthly_resolution_rate=escape(monthly_stats["resolution_rate"]),
+            month_query=escape(filters["month"]),
+            date_from_query=escape(filters["date_from"]),
+            date_to_query=escape(filters["date_to"]),
+            subcategoria_query=escape(filters["subcategoria_local"]),
+            top_cleaners_html=self.top_cleaners_html(reports),
             chart_payload=json.dumps(
                 {
-                    "byDay": self.chart_rows(self.count_by_day(all_reports)),
-                    "byIssue": self.chart_rows(self.count_by_issue(all_reports)),
-                    "byCategory": self.chart_rows(self.count_by_category(all_reports)),
+                    "byDay": self.chart_rows(self.count_by_day(reports)),
+                    "byMonth": self.chart_rows(self.count_by_month(reports)),
+                    "byIssue": self.chart_rows(self.count_by_issue(reports)),
+                    "byCategory": self.chart_rows(self.count_by_category(reports)),
+                    "byStatus": self.chart_rows(self.count_by_status(reports)),
+                    "byPeriod": self.chart_rows(self.count_by_period(reports)),
                 }
             ),
         )
@@ -360,9 +463,21 @@ class AppHandler(BaseHTTPRequestHandler):
             )
             return self.html_response(body, csrf_token=csrf_token if is_new else None)
 
-        reports = database.filtered_reports("pending", "all")
-        resolved_count = database.count_resolved_by_cleaner(cleaner["id"])
-        false_alert_count = database.count_false_alerts_by_cleaner(cleaner["id"])
+        reports = database.get_cleaner_reports(cleaner["id"])
+        pending_count = sum(1 for report in reports if report["status"] == "pending")
+        in_progress_count = sum(1 for report in reports if report["status"] == "in_progress")
+        resolved_count = sum(1 for report in reports if report["status"] == "resolved")
+        false_alert_count = sum(1 for report in reports if report.get("falso_alerta"))
+        total_count = pending_count + in_progress_count + resolved_count + false_alert_count
+        logger.info(
+            "cleaner_kpis user=%s pending=%d in_progress=%d resolved=%d false_alerts=%d total=%d",
+            cleaner["username"],
+            pending_count,
+            in_progress_count,
+            resolved_count,
+            false_alert_count,
+            total_count,
+        )
         body = render_template(
             "cleaner_dashboard.html",
             csrf_token=escape(csrf_token),
@@ -370,7 +485,9 @@ class AppHandler(BaseHTTPRequestHandler):
             cleaner_username=escape(cleaner["username"]),
             cleaner_email=escape(cleaner["email"] or "Sem email associado"),
             report_rows=self.cleaner_report_rows(reports, csrf_token),
-            pending_count=len(reports),
+            total_count=total_count,
+            pending_count=pending_count,
+            in_progress_count=in_progress_count,
             resolved_count=resolved_count,
             false_alert_count=false_alert_count,
         )
@@ -427,7 +544,7 @@ class AppHandler(BaseHTTPRequestHandler):
         logger.info("cleaning_user_created username=%s", username)
         return self.redirect("/admin?users=created")
 
-    def update_cleaning_user_email_form(self, user_id):
+    def update_cleaning_user_form(self, user_id):
         if not auth.valid_admin_cookie(self.headers):
             return self.redirect("/admin")
         form = self.safe_form_or_redirect("/admin")
@@ -435,10 +552,19 @@ class AppHandler(BaseHTTPRequestHandler):
             return
         if not auth.valid_csrf(self.headers, form):
             return self.redirect("/admin?users=csrf")
+
+        name = clean_text(form.get("name", ""), 120)
+        username = clean_text(form.get("username", ""), 40).lower()
         email = clean_text(form.get("email", ""), 180)
-        if email and not is_valid_email(email):
-            return self.redirect("/admin?users=invalid-email")
-        database.update_cleaning_user_email(user_id, email, form.get("receives_notifications") == "on")
+        password = form.get("password", "")
+        receives_notifications = form.get("receives_notifications") == "on"
+
+        if not name or not is_valid_username(username) or (password and not is_valid_password(password)) or (email and not is_valid_email(email)):
+            return self.redirect("/admin?users=invalid")
+        try:
+            database.update_cleaning_user(user_id, name, username, email, receives_notifications, password)
+        except psycopg2.IntegrityError:
+            return self.redirect("/admin?users=duplicate")
         return self.redirect("/admin?users=updated")
 
     def delete_cleaning_user_form(self, user_id):
@@ -517,6 +643,29 @@ class AppHandler(BaseHTTPRequestHandler):
         database.set_setting("notification_email", email)
         return self.json_response({"data": {"notification_email": email}})
 
+    def admin_redirect_filters(self, form):
+        return {
+            "status": form.get("status", "pending"),
+            "categoria_local": form.get("categoria_local", "all"),
+            "subcategoria_local": form.get("subcategoria_local", ""),
+            "periodo": form.get("periodo", "all"),
+            "issue_type": form.get("issue_type", "all"),
+            "curso": form.get("curso", "all"),
+            "date_from": form.get("date_from", ""),
+            "date_to": form.get("date_to", ""),
+        }
+
+    def start_report(self, report_id):
+        if not auth.valid_admin_cookie(self.headers):
+            return self.redirect("/admin")
+        form = self.safe_form_or_redirect("/admin")
+        if form is None:
+            return
+        if not auth.valid_csrf(self.headers, form):
+            return self.redirect("/admin")
+        database.start_report(report_id)
+        return self.redirect(redirect_target("/admin", self.admin_redirect_filters(form)))
+
     def resolve_report(self, report_id):
         if not auth.valid_admin_cookie(self.headers):
             return self.redirect("/admin")
@@ -526,7 +675,7 @@ class AppHandler(BaseHTTPRequestHandler):
         if not auth.valid_csrf(self.headers, form):
             return self.redirect("/admin")
         database.resolve_report(report_id)
-        return self.redirect(redirect_target("/admin", {"status": form.get("status", "pending"), "categoria_local": form.get("categoria_local", "all"), "periodo": form.get("periodo", "all")}))
+        return self.redirect(redirect_target("/admin", self.admin_redirect_filters(form)))
 
     def cancel_report(self, report_id):
         if not auth.valid_admin_cookie(self.headers):
@@ -537,7 +686,19 @@ class AppHandler(BaseHTTPRequestHandler):
         if not auth.valid_csrf(self.headers, form):
             return self.redirect("/admin")
         database.cancel_report(report_id)
-        return self.redirect(redirect_target("/admin", {"status": form.get("status", "pending"), "categoria_local": form.get("categoria_local", "all"), "periodo": form.get("periodo", "all")}))
+        return self.redirect(redirect_target("/admin", self.admin_redirect_filters(form)))
+
+    def start_report_cleaner(self, report_id):
+        cleaner = database.get_cleaner_by_session(auth.get_cleaner_session_token(self.headers))
+        if not cleaner:
+            return self.redirect("/cleaner")
+        form = self.safe_form_or_redirect("/cleaner")
+        if form is None:
+            return
+        if not auth.valid_csrf(self.headers, form):
+            return self.redirect("/cleaner")
+        database.start_report(report_id, cleaner["id"])
+        return self.redirect("/cleaner")
 
     def resolve_report_cleaner(self, report_id):
         cleaner = database.get_cleaner_by_session(auth.get_cleaner_session_token(self.headers))
@@ -610,11 +771,27 @@ class AppHandler(BaseHTTPRequestHandler):
         return '<div class="error">Credenciais invalidas.</div>' if status == "invalid" else ""
 
     def status_options(self, current):
-        options = [("all", "Todos os estados"), ("pending", "Pendentes"), ("resolved", "Resolvidos"), ("canceled", "Cancelados")]
+        options = [("all", "Todos os estados"), ("pending", "Pendentes"), ("in_progress", "Em resolucao"), ("resolved", "Resolvidos"), ("canceled", "Cancelados")]
         parts = []
         for value, label in options:
             sel = ' selected' if value == current else ''
             parts.append(f'<option value="{value}"{sel}>{label}</option>')
+        return "\n".join(parts)
+
+    def issue_filter_options(self, current):
+        options = [("all", "Todos os tipos"), *ISSUE_LABELS.items()]
+        parts = []
+        for value, label in options:
+            sel = ' selected' if value == current else ''
+            parts.append(f'<option value="{escape(value)}"{sel}>{escape(label)}</option>')
+        return "\n".join(parts)
+
+    def course_filter_options(self, current):
+        options = [("all", "Todos os cursos"), *((value, value) for value in COURSE_OPTIONS)]
+        parts = []
+        for value, label in options:
+            sel = ' selected' if value == current else ''
+            parts.append(f'<option value="{escape(value)}"{sel}>{escape(label)}</option>')
         return "\n".join(parts)
 
     def location_options(self, locations, current):
@@ -665,111 +842,278 @@ class AppHandler(BaseHTTPRequestHandler):
             parts.append(f'<option value="{value}"{sel}>{label}</option>')
         return "\n".join(parts)
 
-    def report_rows(self, reports, status, location_id, periodo, csrf_token):
+    def hidden_filter_inputs(self, filters):
+        return "".join(
+            f'<input type="hidden" name="{escape(key)}" value="{escape(value)}">'
+            for key, value in filters.items()
+        )
+
+    def report_timing_html(self, report):
+        wait_seconds = duration_seconds(report.get("created_at"), report.get("started_at"))
+        resolution_seconds = duration_seconds(report.get("started_at"), report.get("resolved_at"))
+        parts = [
+            f"Tempo de espera: {format_duration(wait_seconds)}",
+            f"Tempo de resolucao: {format_duration(resolution_seconds)}",
+        ]
+        if report.get("started_at"):
+            parts.append(f"Inicio: {format_datetime(report['started_at'])}")
+        if report.get("resolved_at"):
+            parts.append(f"Conclusao: {format_datetime(report['resolved_at'])}")
+        return "".join(f'<p class="muted">{escape(part)}</p>' for part in parts)
+
+    def wait_duration_label(self, report):
+        return format_duration(duration_seconds(report.get("created_at"), report.get("started_at")))
+
+    def resolution_duration_label(self, report):
+        return format_duration(duration_seconds(report.get("started_at"), report.get("resolved_at")))
+
+    def report_actions_html(self, report, filters, csrf_token):
+        hidden = self.hidden_filter_inputs(filters)
+        actions = []
+        status_block = ""
+        if report["status"] == "pending":
+            status_block = (
+                f'<form method="post" action="/admin/reports/{report["id"]}/start">'
+                f'<input type="hidden" name="csrf_token" value="{escape(csrf_token)}">{hidden}'
+                '<button class="button button-warning action-status-button" type="submit" title="Em Resolucao">Em Resolucao</button></form>'
+            )
+        elif report["status"] == "in_progress":
+            status_block = '<span class="badge badge-warning action-status-label">Em Resolucao</span>'
+
+        if report["status"] in {"pending", "in_progress"}:
+            actions.append(
+                f'<form method="post" action="/admin/reports/{report["id"]}/resolve">'
+                f'<input type="hidden" name="csrf_token" value="{escape(csrf_token)}">{hidden}'
+                '<button class="icon-action-button button-success" type="submit" title="Resolver">✔</button></form>'
+            )
+            actions.append(
+                f'<form method="post" action="/admin/reports/{report["id"]}/cancel">'
+                f'<input type="hidden" name="csrf_token" value="{escape(csrf_token)}">{hidden}'
+                '<button class="icon-action-button button-danger" type="submit" title="Falso Alerta">✕</button></form>'
+            )
+
+        if not status_block and not actions:
+            return '<div class="actions-cell"></div>'
+
+        buttons_html = "".join(actions)
+        return (
+            '<div class="actions-cell">'
+            f'{status_block}'
+            f'<div class="actions-buttons">{buttons_html}</div>'
+            '</div>'
+        )
+
+    def report_rows(self, reports, filters, csrf_token):
         if not reports:
-            return '<p class="empty">Nenhum reporte encontrado.</p>'
+            return '<tr><td colspan="11" class="empty">Nenhum reporte encontrado.</td></tr>'
         rows = []
         for report in reports:
-            description = f'<p class="description">{escape(report["description"])}</p>' if report["description"] else ""
-            metadata = self.report_metadata(report)
-            resolved_by_html = ""
-            if report["status"] == "resolved":
-                resolved_by_html = f'<p class="muted">Resolvido por: {escape(report.get("resolved_by_name") or "Administrador")}</p>'
-            if report["status"] == "canceled":
-                resolved_by_html = f'<p class="muted">Cancelado por: {escape(report.get("resolved_by_name") or "Administrador")}</p>'
-            report_photo = self.photo_link(report.get("foto_reporte"), "Ver foto do reporte")
-            resolution_photo = self.photo_link(report.get("foto_resolucao"), "Ver foto da resolucao")
-            action = ""
-            if report["status"] == "pending":
-                action = (
-                     '<div class="report-actions">'
-                     f'<form method="post" action="/admin/reports/{report["id"]}/resolve">'
-                     f'<input type="hidden" name="csrf_token" value="{escape(csrf_token)}">'
-                     f'<input type="hidden" name="status" value="{escape(status)}">'
-                     f'<input type="hidden" name="categoria_local" value="{escape(report.get("categoria_local", "all"))}">'
-                     f'<input type="hidden" name="periodo" value="{escape(periodo)}">'
-                     '<button class="button button-success" type="submit">Resolver</button>'
-                     "</form>"
-                     f'<form method="post" action="/admin/reports/{report["id"]}/cancel">'
-                     f'<input type="hidden" name="csrf_token" value="{escape(csrf_token)}">'
-                     f'<input type="hidden" name="status" value="{escape(status)}">'
-                     f'<input type="hidden" name="categoria_local" value="{escape(report.get("categoria_local", "all"))}">'
-                     f'<input type="hidden" name="periodo" value="{escape(periodo)}">'
-                     '<button class="button button-danger" type="submit">Cancelar</button>'
-                     "</form></div>"
-                )
+            level = waiting_level(report.get("created_at"), report.get("status"))
+            search_text = " ".join(
+                str(value or "")
+                for value in [
+                    report["id"],
+                    format_datetime(report["created_at"]),
+                    self.report_location_title(report),
+                    self.report_location_detail(report),
+                    LOCAL_CATEGORY_LABELS.get(report.get("categoria_local"), ""),
+                    USER_CATEGORY_LABELS.get(report.get("categoria_utilizador"), ""),
+                    report.get("curso"),
+                    PERIOD_LABELS.get(report.get("periodo"), ""),
+                    STATUS_LABELS.get(report["status"], ""),
+                    self.wait_duration_label(report),
+                    self.resolution_duration_label(report),
+                    report.get("resolved_by_name"),
+                    report.get("started_by_name"),
+                ]
+            )
             rows.append(
-                '<article class="report-row"><div><div class="badges">'
-                f'<span class="badge">#{report["id"]}</span>'
-                f'<span class="badge badge-blue">{escape(ISSUE_LABELS[report["issue_type"]])}</span>'
-                f'<span class="badge badge-status">{escape(STATUS_LABELS[report["status"]])}</span>'
-                "</div>"
-                f'<h2>{escape(self.report_location_title(report))}</h2>'
-                f'<p class="room-number">{escape(self.report_location_detail(report))}</p>'
-                f'<p class="muted">{format_datetime(report["created_at"])}</p>'
-                f"{metadata}{resolved_by_html}{description}{report_photo}{resolution_photo}</div>{action}</article>"
+                f'<tr class="report-wait-{escape(level)}" data-search="{escape(search_text).lower()}">'
+                f'<td data-sort="{report["id"]}">#{report["id"]}</td>'
+                f'<td data-sort="{format_datetime(report["created_at"])}">{format_datetime(report["created_at"])}</td>'
+                f'<td>{escape(self.report_location_title(report))}</td>'
+                f'<td>{escape(ISSUE_LABELS[report["issue_type"]])}</td>'
+                f'<td>{escape(USER_CATEGORY_LABELS.get(report.get("categoria_utilizador"), report.get("categoria_utilizador") or ""))}</td>'
+                f'<td>{escape(report.get("curso") or "")}</td>'
+                f'<td>{escape(PERIOD_LABELS.get(report.get("periodo"), report.get("periodo") or ""))}</td>'
+                f'<td><span class="badge badge-status">{escape(STATUS_LABELS[report["status"]])}</span></td>'
+                f'<td>{escape(self.wait_duration_label(report))}</td>'
+                f'<td>{escape(self.resolution_duration_label(report))}</td>'
+                f'<td>{escape(report.get("resolved_by_name") or report.get("started_by_name") or "")}</td>'
+                f'<td class="photo-cell">{self.photo_link(report.get("foto_reporte"), "Ver Foto", "occurrence", report["id"]) or "<span class=\"no-photo\">Sem Foto</span>"}</td>'
+                f'<td class="photo-cell">{self.photo_link(report.get("foto_resolucao"), "Ver Foto", "resolution", report["id"]) or "<span class=\"no-photo\">Sem Foto</span>"}</td>'
+                "</tr>"
             )
         return "\n".join(rows)
 
     def cleaner_report_rows(self, reports, csrf_token):
         if not reports:
-            return '<p class="empty">Nenhum reporte pendente.</p>'
+            return '<tr><td colspan="11" class="empty">Nenhuma ocorrencia encontrada.</td></tr>'
         rows = []
         for report in reports:
-            description = f'<p class="description">{escape(report["description"])}</p>' if report["description"] else ""
-            metadata = self.report_metadata(report)
-            report_photo = self.photo_link(report.get("foto_reporte"), "Ver foto do reporte")
+            status_label = STATUS_LABELS.get(report["status"], report["status"])
+            status_class = "badge-status"
+            row_class = f'report-wait-{waiting_level(report.get("created_at"), report.get("status"))}'
+            if report.get("falso_alerta"):
+                status_label = "Falso Alerta"
+                status_class = "badge-danger"
+                row_class = "report-wait-done cleaner-false-alert"
+            elif report["status"] == "resolved":
+                status_class = "badge-green"
+                row_class = "cleaner-resolved"
+            elif report["status"] == "in_progress":
+                status_class = "badge-warning"
+                row_class = "report-wait-warning"
+            elif report["status"] == "pending" and waiting_level(report.get("created_at"), report.get("status")) == "late":
+                row_class = "report-wait-late"
+
+            photo_count = sum(1 for path in [report.get("foto_reporte"), report.get("foto_resolucao")] if path)
+            photo_label = "Sem Fotos" if photo_count == 0 else f"{photo_count} Foto" + ("s" if photo_count > 1 else "")
+            photo_button = (
+                '<button class="button button-secondary photos-button" type="button"'
+                f' data-occurrence-photo="{escape(report.get("foto_reporte") or "")}"'
+                f' data-resolution-photo="{escape(report.get("foto_resolucao") or "")}"'
+                f' title="{escape(photo_label)}">'
+                f'📷 {escape(photo_label)}</button>'
+            )
+            start_action = ""
+            if report["status"] == "pending":
+                start_action = (
+                    f'<form method="post" action="/cleaner/reports/{report["id"]}/start">'
+                    f'<input type="hidden" name="csrf_token" value="{escape(csrf_token)}">'
+                    '<button class="button button-warning" type="submit">Em Resolucao</button>'
+                    '</form>'
+                )
+            resolve_actions = ""
+            if report["status"] in {"pending", "in_progress"}:
+                resolve_actions = (
+                    f'<form class="resolve-evidence" method="post" enctype="multipart/form-data" action="/cleaner/reports/{report["id"]}/resolve">'
+                    f'<input type="hidden" name="csrf_token" value="{escape(csrf_token)}">'
+                    '<input class="resolve-file" type="file" name="foto_resolucao" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" required>'
+                    '<button class="button button-success resolve-button" type="submit" disabled>Resolver</button>'
+                    f'</form>'
+                    f'<form class="resolve-evidence" method="post" enctype="multipart/form-data" action="/cleaner/reports/{report["id"]}/false-alert">'
+                    f'<input type="hidden" name="csrf_token" value="{escape(csrf_token)}">'
+                    '<input class="resolve-file" type="file" name="foto_resolucao" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" required>'
+                    '<button class="button button-danger resolve-button" type="submit" disabled>Falso Alerta</button>'
+                    '</form>'
+                )
+            search_text = " ".join(
+                str(value or "")
+                for value in [
+                    report["id"],
+                    self.report_location_title(report),
+                    ISSUE_LABELS.get(report["issue_type"]),
+                    status_label,
+                ]
+            )
             rows.append(
-                '<article class="report-row"><div><div class="badges">'
-                f'<span class="badge">#{report["id"]}</span>'
-                f'<span class="badge badge-blue">{escape(ISSUE_LABELS[report["issue_type"]])}</span>'
-                f'<span class="badge badge-status">{escape(STATUS_LABELS[report["status"]])}</span>'
-                "</div>"
-                f'<h2>{escape(self.report_location_title(report))}</h2>'
-                f'<p class="room-number">{escape(self.report_location_detail(report))}</p>'
-                f'<p class="muted">{format_datetime(report["created_at"])}</p>'
-                f"{metadata}{description}{report_photo}</div>"
-                f'<div class="resolve-group">'
-                f'<form class="resolve-evidence" method="post" enctype="multipart/form-data" action="/cleaner/reports/{report["id"]}/resolve">'
-                f'<input type="hidden" name="csrf_token" value="{escape(csrf_token)}">'
-                '<input class="resolve-file" type="file" name="foto_resolucao" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" required>'
-                '<button class="button button-success resolve-button" type="submit" disabled>Resolver</button>'
-                f'</form>'
-                f'<form class="resolve-evidence" method="post" enctype="multipart/form-data" action="/cleaner/reports/{report["id"]}/false-alert">'
-                f'<input type="hidden" name="csrf_token" value="{escape(csrf_token)}">'
-                '<input class="resolve-file" type="file" name="foto_resolucao" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" required>'
-                '<button class="button button-danger resolve-button" type="submit" disabled>Falso alerta</button>'
-                '</form></div></article>'
+                f'<tr class="{escape(row_class)}" data-status="{escape(report["status"])}" data-false-alert="{"yes" if report.get("falso_alerta") else "no"}" data-search="{escape(search_text).lower()}">'
+                f'<td data-sort="{report["id"]}">#{report["id"]}</td>'
+                f'<td data-sort="{format_datetime(report["created_at"])}">{format_datetime(report["created_at"])}</td>'
+                f'<td>{escape(self.report_location_title(report))}</td>'
+                f'<td>{escape(ISSUE_LABELS[report["issue_type"]])}</td>'
+                f'<td>{escape(PERIOD_LABELS.get(report.get("periodo"), report.get("periodo") or ""))}</td>'
+                f'<td><span class="badge {status_class}">{escape(status_label)}</span></td>'
+                f'<td>{escape(self.wait_duration_label(report))}</td>'
+                f'<td>{escape(self.resolution_duration_label(report))}</td>'
+                f'<td>{escape(report.get("description") or "")}</td>'
+                f'<td class="photos-cell">{photo_button}</td>'
+                f'<td><div class="table-actions cleaner-actions">{start_action}{resolve_actions}</div></td>'
+                "</tr>"
+            )
+        return "\n".join(rows)
+
+    def report_rows(self, reports, filters, csrf_token):
+        if not reports:
+            return '<tr><td colspan="11" class="empty">Nenhum reporte encontrado.</td></tr>'
+        rows = []
+        for report in reports:
+            responsible = report.get("resolved_by_name") or report.get("started_by_name") or ""
+            level = waiting_level(report.get("created_at"), report.get("status"))
+            search_text = " ".join(
+                str(value or "")
+                for value in [
+                    report["id"],
+                    format_datetime(report["created_at"]),
+                    self.report_location_title(report),
+                    ISSUE_LABELS.get(report["issue_type"]),
+                    PERIOD_LABELS.get(report.get("periodo")),
+                    STATUS_LABELS.get(report["status"]),
+                    responsible,
+                ]
+            )
+            photo_count = sum(1 for path in [report.get("foto_reporte"), report.get("foto_resolucao")] if path)
+            photo_label = "Sem Fotos" if photo_count == 0 else f"{photo_count} Foto" + ("s" if photo_count > 1 else "")
+            photo_button = (
+                '<button class="button button-secondary photos-button admin-photos-button" type="button"'
+                f' data-report-id="#{report["id"]}"'
+                f' data-report-date="{escape(format_datetime(report["created_at"]))}"'
+                f' data-report-location="{escape(self.report_location_title(report))}"'
+                f' data-report-category="{escape(ISSUE_LABELS[report["issue_type"]])}"'
+                f' data-report-status="{escape(STATUS_LABELS[report["status"]])}"'
+                f' data-report-responsible="{escape(responsible)}"'
+                f' data-occurrence-photo="{escape(report.get("foto_reporte") or "")}"'
+                f' data-resolution-photo="{escape(report.get("foto_resolucao") or "")}"'
+                f' title="{escape(photo_label)}">'
+                f'📷 {escape(photo_label)}</button>'
+            )
+            rows.append(
+                f'<tr class="report-wait-{escape(level)}" data-search="{escape(search_text).lower()}">'
+                f'<td data-sort="{report["id"]}">#{report["id"]}</td>'
+                f'<td data-sort="{format_datetime(report["created_at"])}">{format_datetime(report["created_at"])}</td>'
+                f'<td>{escape(self.report_location_title(report))}</td>'
+                f'<td>{escape(ISSUE_LABELS[report["issue_type"]])}</td>'
+                f'<td>{escape(PERIOD_LABELS.get(report.get("periodo"), report.get("periodo") or ""))}</td>'
+                f'<td><span class="badge badge-status">{escape(STATUS_LABELS[report["status"]])}</span></td>'
+                f'<td>{escape(self.wait_duration_label(report))}</td>'
+                f'<td>{escape(self.resolution_duration_label(report))}</td>'
+                f'<td>{escape(responsible)}</td>'
+                f'<td class="photos-cell">{photo_button}</td>'
+                f'<td>{self.report_actions_html(report, filters, csrf_token)}</td>'
+                "</tr>"
             )
         return "\n".join(rows)
 
     def cleaning_user_rows(self, cleaning_users, csrf_token):
         if not cleaning_users:
-            return '<p class="empty">Nenhum utilizador de limpeza criado.</p>'
+            return '<tr><td colspan="6" class="empty">Nenhum utilizador de limpeza criado.</td></tr>'
 
         rows = []
 
         for user in cleaning_users:
             checked = "checked" if user["receives_notifications"] else ""
+            notify_state = "yes" if user["receives_notifications"] else "no"
+            search_text = f'{user["name"]} {user["username"]} {user["email"] or ""}'
 
             rows.append(
-                '<article class="user-row"><div>'
-                f'<strong>{escape(user["name"])}</strong><span>{escape(user["username"])}</span></div>'
-                f'<div><span class="badge badge-danger">Falsos alertas: {user["false_alert_count"]}</span></div>'
-
-                f'<form class="user-email-form" method="post" action="/admin/cleaning-users/{user["id"]}/email">'
+                f'<tr data-search="{escape(search_text).lower()}" data-notify="{notify_state}">'
+                f'<td><input form="user-save-{user["id"]}" class="row-input" type="text" name="name" value="{escape(user["name"])}" readonly disabled></td>'
+                f'<td><input form="user-save-{user["id"]}" class="row-input" type="text" name="username" value="{escape(user["username"])}" readonly disabled></td>'
+                f'<td><input form="user-save-{user["id"]}" class="row-input" type="email" name="email" value="{escape(user["email"] or "")}" placeholder="email@exemplo.com" readonly disabled></td>'
+                '<td class="password-cell">'
+                '<span class="password-mask">********</span>'
+                '<div class="password-edit-group">'
+                f'<input form="user-save-{user["id"]}" class="row-input password-input" type="password" name="password" placeholder="********" disabled>'
+                '<button class="action-btn password-toggle-button" type="button" title="Mostrar/Ocultar senha">👁</button>'
+                '</div></td>'
+                '<td class="notifications-cell">'
+                f'<label class="check-field"><input form="user-save-{user["id"]}" class="notify-checkbox" type="checkbox" name="receives_notifications" {checked} disabled aria-label="Recebe notificacoes"></label>'
+                '</td>'
+                '<td class="actions-cell">'
+                '<div class="action-btn-group">'
+                '<button class="action-btn action-edit-button" type="button" title="Editar">✏️</button>'
+                f'<button class="action-btn action-save-button" type="submit" form="user-save-{user["id"]}" title="Guardar" hidden>💾</button>'
+                '<button class="action-btn action-cancel-button" type="button" title="Cancelar" hidden>↩️</button>'
+                f'<form class="delete-form" method="post" action="/admin/cleaning-users/{user["id"]}/delete" onsubmit="return confirm(\'Tem certeza que deseja eliminar este utilizador? Esta acao nao pode ser desfeita.\');">'
                 f'<input type="hidden" name="csrf_token" value="{escape(csrf_token)}">'
-                f'<input type="email" name="email" value="{escape(user["email"] or "")}" placeholder="email@exemplo.com">'
-                '<label class="check-field">'
-                f'<input type="checkbox" name="receives_notifications" {checked}>'
-                '<span>Recebe notificacoes</span></label>'
-                '<button class="button button-secondary" type="submit">Guardar</button></form>'
-
-                f'''<form method="post"
-                    action="/admin/cleaning-users/{user["id"]}/delete"
-                    onsubmit="return confirm('Tem certeza que deseja eliminar este utilizador? Esta ação não pode ser desfeita.');">'''
+                '<button class="action-btn action-delete-button" type="submit" title="Eliminar">🗑️</button>'
+                '</form>'
+                '</div>'
+                f'<form id="user-save-{user["id"]}" method="post" action="/admin/cleaning-users/{user["id"]}/update" hidden>'
                 f'<input type="hidden" name="csrf_token" value="{escape(csrf_token)}">'
-                '<button class="button button-danger" type="submit">Eliminar</button></form></article>'
+                '</form>'
+                '</td></tr>'
             )
         return "\n".join(rows)
 
@@ -805,10 +1149,26 @@ class AppHandler(BaseHTTPRequestHandler):
             parts.append(f"Numero de estudante: {report['student_number']}")
         return "".join(f'<p class="muted">{escape(part)}</p>' for part in parts)
 
-    def photo_link(self, path, label):
-        if not path:
+    def photo_link(self, path, label, photo_type=None, report_id=None):
+        if not path or not report_id:
             return ""
-        return f'<a class="report-photo" href="{escape(path)}" target="_blank" rel="noopener">{escape(label)}</a>'
+        return f'<a class="report-photo" href="/view-photo?id={report_id}&type={photo_type}" target="_blank" rel="noopener">{escape(label)}</a>'
+
+    def photo_thumbnail(self, path, label, show_no_photo=False):
+        if not path:
+            return '<span class="no-photo">Sem foto</span>' if show_no_photo else ""
+        return (
+            f'<a class="photo-thumb" href="{escape(path)}" target="_blank" rel="noopener">'
+            f'<img src="{escape(path)}" alt="{escape(label)}" loading="lazy"></a>'
+        )
+
+    def photo_thumbnail(self, path, label, show_no_photo=False):
+        if not path:
+            return '<span class="no-photo">Sem foto</span>' if show_no_photo else ""
+        return (
+            f'<a class="photo-thumb" href="{escape(path)}" target="_blank" rel="noopener">'
+            f'<img src="{escape(path)}" alt="{escape(label)}" loading="lazy"></a>'
+        )
 
     def count_by_day(self, reports):
         counts = {}
@@ -816,6 +1176,13 @@ class AppHandler(BaseHTTPRequestHandler):
             key = day_key(report["created_at"])
             counts[key] = counts.get(key, 0) + 1
         return list(counts.items())[:7]
+
+    def count_by_month(self, reports):
+        counts = {}
+        for report in reports:
+            key = str(report["created_at"])[:7]
+            counts[key] = counts.get(key, 0) + 1
+        return sorted(counts.items())[-12:]
 
     def count_by_issue(self, reports):
         counts = {}
@@ -831,6 +1198,29 @@ class AppHandler(BaseHTTPRequestHandler):
             if key:
                 counts[key] = counts.get(key, 0) + 1
         return sorted(counts.items(), key=lambda item: item[1], reverse=True)
+
+    def count_by_status(self, reports):
+        counts = {label: 0 for label in STATUS_LABELS.values()}
+        for report in reports:
+            key = STATUS_LABELS.get(report.get("status"))
+            if key:
+                counts[key] = counts.get(key, 0) + 1
+        return sorted(counts.items(), key=lambda item: item[1], reverse=True)
+
+    def count_by_location(self, reports):
+        counts = {}
+        for report in reports:
+            key = self.report_location_title(report)
+            counts[key] = counts.get(key, 0) + 1
+        return sorted(counts.items(), key=lambda item: item[1], reverse=True)[:12]
+
+    def count_by_period(self, reports):
+        counts = {"Manha": 0, "Tarde": 0, "Noite": 0}
+        for report in reports:
+            period = get_period(report.get("created_at"))
+            label = PERIOD_LABELS.get(period, "Manha")
+            counts[label] = counts.get(label, 0) + 1
+        return list(counts.items())
 
     def top_course(self, reports):
         counts = {}
@@ -869,6 +1259,301 @@ class AppHandler(BaseHTTPRequestHandler):
     def chart_rows(self, values):
         return [{"label": label, "value": count} for label, count in values if count > 0]
 
+    def average_duration(self, reports, start_key, end_key):
+        values = [
+            duration_seconds(report.get(start_key), report.get(end_key))
+            for report in reports
+            if report.get(start_key) and report.get(end_key)
+        ]
+        values = [value for value in values if value is not None]
+        if not values:
+            return "Ainda sem dados"
+        return format_duration(sum(values) / len(values))
+
+    def dashboard_stats(self, reports):
+        total = len(reports)
+        resolved = sum(1 for report in reports if report["status"] == "resolved")
+        return {
+            "pending_count": sum(1 for report in reports if report["status"] == "pending"),
+            "in_progress_count": sum(1 for report in reports if report["status"] == "in_progress"),
+            "resolved_count": resolved,
+            "canceled_count": sum(1 for report in reports if report["status"] == "canceled"),
+            "avg_wait_time": self.average_duration(reports, "created_at", "started_at"),
+            "avg_resolution_time": self.average_duration(reports, "started_at", "resolved_at"),
+            "resolution_rate": f"{round((resolved / total) * 100)}%" if total else "0%",
+        }
+
+    def monthly_stats(self, reports):
+        total = len(reports)
+        resolved = sum(1 for report in reports if report["status"] == "resolved")
+        pending = sum(1 for report in reports if report["status"] == "pending")
+        return {
+            "total": total,
+            "resolved": resolved,
+            "pending": pending,
+            "resolution_rate": self.resolution_rate(reports),
+            "avg_wait": self.average_duration(reports, "created_at", "started_at"),
+            "avg_resolution": self.average_duration(reports, "started_at", "resolved_at"),
+            "by_issue": self.count_by_issue(reports),
+            "by_period": self.count_by_period(reports),
+        }
+
+    def resolution_rate(self, reports):
+        total = len(reports)
+        if not total:
+            return "0%"
+        resolved = sum(1 for report in reports if report["status"] == "resolved")
+        return f"{round((resolved / total) * 100)}%"
+
+    def printable_report_html(self, report):
+        return (
+            '<!doctype html><html lang="pt-PT"><head><meta charset="utf-8">'
+            '<meta name="viewport" content="width=device-width, initial-scale=1">'
+            '<title>Imprimir reporte</title><link rel="stylesheet" href="/static/styles.css"></head>'
+            '<body class="print-body"><main class="print-page">'
+            f'<h1>Reporte #{report["id"]}</h1>'
+            f'<p><strong>Estado:</strong> {escape(STATUS_LABELS[report["status"]])}</p>'
+            f'<p><strong>Tipo:</strong> {escape(ISSUE_LABELS[report["issue_type"]])}</p>'
+            f'<p><strong>Local:</strong> {escape(self.report_location_title(report))}</p>'
+            f'<p><strong>Detalhe:</strong> {escape(self.report_location_detail(report))}</p>'
+            f'<p><strong>Criado em:</strong> {format_datetime(report["created_at"])}</p>'
+            f'{self.report_timing_html(report)}'
+            f'<p><strong>Descricao:</strong> {escape(report.get("description") or "Sem descricao")}</p>'
+            '<button class="button button-secondary print-button" onclick="window.print()">Imprimir</button>'
+            '<script>window.addEventListener("load", function(){ window.print(); });</script>'
+            '</main></body></html>'
+        )
+
+    def abbreviate(self, text, max_len=18):
+        if not text:
+            return ""
+        text = str(text)
+        if len(text) <= max_len:
+            return text
+        abbreviations = {
+            "Contabilidade e Gestao": "Contab. Gestao",
+            "Engenharia Informatica": "Eng. Informatica",
+            "Enfermagem": "Enfermagem",
+            "Agronomia": "Agronomia",
+            "Direito": "Direito",
+            "Economia": "Economia",
+            "Medicina": "Medicina",
+            "Funcionario": "Funcionario",
+            "Visitante": "Visitante",
+        }
+        return abbreviations.get(text, text[:max_len - 2] + "..")
+
+    def report_table_print_rows(self, reports, include_user=True):
+        col_span = 9 if include_user else 8
+        if not reports:
+            return f'<tr><td colspan="{col_span}">Sem registos.</td></tr>'
+        rows = []
+        for report in reports:
+            level = waiting_level(report.get("created_at"), report.get("status"))
+            user_td = f'<td>{escape(self.abbreviate(USER_CATEGORY_LABELS.get(report.get("categoria_utilizador"), report.get("categoria_utilizador") or ""), 14))}</td>' if include_user else ""
+            rows.append(
+                f'<tr class="report-wait-{escape(level)}">'
+                f'<td>#{report["id"]}</td>'
+                f'<td>{format_datetime(report["created_at"])}</td>'
+                f'<td>{escape(self.report_location_title(report))}</td>'
+                f'<td>{escape(self.abbreviate(ISSUE_LABELS.get(report["issue_type"], report["issue_type"]), 16))}</td>'
+                f'{user_td}'
+                f'<td><span class="badge badge-status">{escape(STATUS_LABELS[report["status"]])}</span></td>'
+                f'<td>{escape(self.wait_duration_label(report))}</td>'
+                f'<td>{escape(self.resolution_duration_label(report))}</td>'
+                f'<td>{escape(self.abbreviate(report.get("resolved_by_name") or report.get("started_by_name") or "", 16))}</td>'
+                "</tr>"
+            )
+        return "\n".join(rows)
+
+    def report_filters_summary(self, filters):
+        labels = []
+        if filters["date_from"]:
+            labels.append(f"Desde {filters['date_from']}")
+        if filters["date_to"]:
+            labels.append(f"Ate {filters['date_to']}")
+        if filters["subcategoria_local"]:
+            labels.append(f"Local: {filters['subcategoria_local']}")
+        elif filters["categoria_local"] != "all":
+            labels.append(f"Categoria: {LOCAL_CATEGORY_LABELS.get(filters['categoria_local'], filters['categoria_local'])}")
+        if filters["status"] != "all":
+            labels.append(f"Estado: {STATUS_LABELS.get(filters['status'], filters['status'])}")
+        if filters["curso"] != "all":
+            labels.append(f"Curso: {filters['curso']}")
+        if filters["periodo"] != "all":
+            labels.append(f"Periodo: {PERIOD_LABELS.get(filters['periodo'], filters['periodo'])}")
+        return " | ".join(labels) if labels else "Todos os registos"
+
+    def print_report(self, report_id):
+        if not auth.valid_admin_cookie(self.headers):
+            return self.redirect("/admin")
+        report = next((item for item in database.filtered_reports("all", "all") if item["id"] == report_id), None)
+        if not report:
+            return self.not_found()
+        return self.html_response(self.printable_report_html(report))
+
+    def print_filtered_reports(self, query, auto_print=False):
+        if not auth.valid_admin_cookie(self.headers):
+            return self.redirect("/admin")
+        filters = self.admin_filters_from_query(query)
+        reports = self.reports_for_filters(filters)
+        stats = self.dashboard_stats(reports)
+        monthly = self.monthly_stats(reports)
+
+        by_category = self.count_by_category(reports)
+        by_issue = self.count_by_issue(reports)
+        by_status = self.count_by_status(reports)
+        by_period = self.count_by_period(reports)
+        by_month = self.count_by_month(reports)
+
+        user_counts = {
+            "student": sum(1 for r in reports if r.get("categoria_utilizador") == "student"),
+            "employee": sum(1 for r in reports if r.get("categoria_utilizador") == "employee"),
+            "visitor": sum(1 for r in reports if r.get("categoria_utilizador") == "visitor"),
+        }
+
+        body = render_template(
+            "admin_report_print.html",
+            institution_name=escape("Instituicao Kimpa Vita"),
+            issued_at=escape(format_datetime(datetime.now())),
+            period_summary=escape(self.report_filters_summary(filters)),
+            generated_by=escape("Administrador"),
+            total_count=len(reports),
+            pending_count=stats["pending_count"],
+            in_progress_count=stats["in_progress_count"],
+            resolved_count=stats["resolved_count"],
+            canceled_count=sum(1 for r in reports if r["status"] == "canceled"),
+            resolution_rate=escape(self.resolution_rate(reports)),
+            avg_wait_time=escape(stats["avg_wait_time"]),
+            avg_resolution_time=escape(stats["avg_resolution_time"]),
+            student_count=user_counts["student"],
+            employee_count=user_counts["employee"],
+            visitor_count=user_counts["visitor"],
+            morning_count=by_period[0][1] if by_period else 0,
+            afternoon_count=by_period[1][1] if len(by_period) > 1 else 0,
+            night_count=by_period[2][1] if len(by_period) > 2 else 0,
+            top_location=escape(self.top_location(reports)),
+            top_issue=escape(self.top_issue(reports)),
+            table_rows=self.report_table_print_rows(reports),
+            analysis_html=self.generate_analysis(reports, by_category, by_period, by_month, stats),
+            conclusions_html=self.generate_conclusions(reports, by_category, by_period, stats),
+            auto_print_script="<script>window.addEventListener('load', function(){ setTimeout(function(){ window.print(); }, 300); });</script>" if auto_print else "",
+            chart_payload=json.dumps(
+                {
+                    "byMonth": self.chart_rows(by_month),
+                    "byIssue": self.chart_rows(by_issue),
+                    "byStatus": self.chart_rows(by_status),
+                    "byPeriod": self.chart_rows(by_period),
+                }
+            ),
+        )
+        return self.html_response(body)
+
+    def export_filtered_reports_excel(self, query):
+        if not auth.valid_admin_cookie(self.headers):
+            return self.redirect("/admin")
+        filters = self.admin_filters_from_query(query)
+        reports = self.reports_for_filters(filters)
+        rows = self.report_table_print_rows(reports, include_photos=False)
+        html = (
+            '<html><head><meta charset="utf-8"></head><body>'
+            f'<h1>Relatorio administrativo</h1><p>{escape(self.report_filters_summary(filters))}</p>'
+            '<table border="1"><thead><tr>'
+            '<th>ID</th><th>Data</th><th>Local</th><th>Categoria</th><th>Utilizador</th>'
+            '<th>Curso</th><th>Periodo</th><th>Estado</th><th>Tempo de Espera</th>'
+            '<th>Tempo de Resolucao</th><th>Resolvido Por</th></tr></thead>'
+            f'<tbody>{rows}</tbody></table></body></html>'
+        )
+        data = html.encode("utf-8")
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "application/vnd.ms-excel; charset=utf-8")
+        self.send_header("Content-Disposition", 'attachment; filename="relatorios-filtrados.xls"')
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def show_monthly_report(self, query, auto_print=False):
+        if not auth.valid_admin_cookie(self.headers):
+            return self.redirect("/admin")
+        month = clean_text((query.get("month") or [datetime.now().strftime("%Y-%m")])[0], 7)
+        if not re.fullmatch(r"\d{4}-\d{2}", month):
+            month = datetime.now().strftime("%Y-%m")
+        reports = database.monthly_reports(month)
+        stats = self.dashboard_stats(reports)
+        by_category = self.count_by_category(reports)
+        by_issue = self.count_by_issue(reports)
+        by_status = self.count_by_status(reports)
+        by_period = self.count_by_period(reports)
+        by_month = self.count_by_month(reports)
+        user_counts = {
+            "student": sum(1 for r in reports if r.get("categoria_utilizador") == "student"),
+            "employee": sum(1 for r in reports if r.get("categoria_utilizador") == "employee"),
+            "visitor": sum(1 for r in reports if r.get("categoria_utilizador") == "visitor"),
+        }
+        false_alert_count = sum(1 for r in reports if r.get("falso_alerta"))
+        body = render_template(
+            "monthly_report.html",
+            institution_name=escape("Instituicao Kimpa Vita"),
+            issued_at=escape(format_datetime(datetime.now())),
+            month=escape(month),
+            generated_by=escape("Administrador"),
+            total_count=len(reports),
+            resolved_count=stats["resolved_count"],
+            pending_count=stats["pending_count"],
+            in_progress_count=stats["in_progress_count"],
+            false_alert_count=false_alert_count,
+            resolution_rate=escape(self.resolution_rate(reports)),
+            avg_wait_time=escape(stats["avg_wait_time"]),
+            avg_resolution_time=escape(stats["avg_resolution_time"]),
+            top_location=escape(self.top_location(reports)),
+            top_issue=escape(self.top_issue(reports)),
+            top_period=escape(self.top_period(reports)),
+            table_rows=self.report_table_print_rows(reports),
+            analysis_html=self.generate_analysis(reports, by_category, by_period, by_month, stats),
+            conclusions_html=self.generate_conclusions(reports, by_category, by_period, stats),
+            auto_print_script="<script>window.addEventListener('load', function(){ setTimeout(function(){ window.print(); }, 300); });</script>" if auto_print else "",
+            chart_payload=json.dumps(
+                {
+                    "byMonth": self.chart_rows(by_month),
+                    "byIssue": self.chart_rows(by_issue),
+                    "byStatus": self.chart_rows(by_status),
+                    "byPeriod": self.chart_rows(by_period),
+                }
+            ),
+        )
+        return self.html_response(body)
+
+    def simple_pdf(self, title, lines):
+        text_lines = [title, ""] + lines
+        y = 780
+        commands = ["BT", "/F1 14 Tf"]
+        for line in text_lines:
+            safe = str(line).replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+            commands.append(f"1 0 0 1 50 {y} Tm ({safe}) Tj")
+            y -= 22
+        commands.append("ET")
+        stream = "\n".join(commands).encode("latin-1", errors="replace")
+        objects = [
+            b"<< /Type /Catalog /Pages 2 0 R >>",
+            b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+            b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+            b"<< /Length " + str(len(stream)).encode("ascii") + b" >>\nstream\n" + stream + b"\nendstream",
+        ]
+        pdf = bytearray(b"%PDF-1.4\n")
+        offsets = [0]
+        for index, obj in enumerate(objects, 1):
+            offsets.append(len(pdf))
+            pdf.extend(f"{index} 0 obj\n".encode("ascii") + obj + b"\nendobj\n")
+        xref = len(pdf)
+        pdf.extend(f"xref\n0 {len(objects) + 1}\n0000000000 65535 f \n".encode("ascii"))
+        for offset in offsets[1:]:
+            pdf.extend(f"{offset:010d} 00000 n \n".encode("ascii"))
+        pdf.extend(f"trailer << /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF".encode("ascii"))
+        return bytes(pdf)
+
+    def monthly_report_pdf(self, query):
+        return self.show_monthly_report(query, auto_print=True)
     def bar_list(self, values):
         if not values:
             return '<p class="muted">Sem dados para mostrar.</p>'
@@ -936,6 +1621,117 @@ class AppHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
+
+    def view_photo(self, query):
+        report_id = clean_text((query.get("id") or [""])[0], 20)
+        photo_type = clean_text((query.get("type") or [""])[0], 20)
+        if not report_id or not photo_type or photo_type not in {"occurrence", "resolution"}:
+            return self.redirect("/admin")
+        report = next((item for item in database.filtered_reports("all", "all") if item["id"] == int(report_id)), None)
+        if not report:
+            return self.redirect("/admin")
+        if photo_type == "occurrence":
+            photo_url = report.get("foto_reporte")
+        else:
+            photo_url = report.get("foto_resolucao")
+        if not photo_url:
+            return self.redirect("/admin")
+        body = render_template(
+            "view_photo.html",
+            report_id=report["id"],
+            photo_url=escape(photo_url),
+            photo_type=escape(photo_type),
+            report_date=escape(format_datetime(report["created_at"])),
+            report_location=escape(self.report_location_title(report)),
+            report_category=escape(LOCAL_CATEGORY_LABELS.get(report.get("categoria_local"), report.get("categoria_local") or "")),
+            report_status=escape(STATUS_LABELS[report["status"]]),
+        )
+        return self.html_response(body)
+
+    def photo_grid_rows(self, reports):
+        rows = []
+        rows.append('<table class="photo-evidence-table"><thead><tr><th>ID</th><th>Ocorrencia</th><th>Resolucao</th></tr></thead><tbody>')
+        for report in reports:
+            occ_img = ''
+            res_img = ''
+            if report.get("foto_reporte"):
+                occ_img = f'<img src="{escape(report["foto_reporte"])}" alt="Ocorrencia #{report["id"]}" class="evidence-thumb" loading="lazy" />'
+            else:
+                occ_img = '<span class="no-photo">Sem foto</span>'
+            if report.get("foto_resolucao"):
+                res_img = f'<img src="{escape(report["foto_resolucao"])}" alt="Resolucao #{report["id"]}" class="evidence-thumb" loading="lazy" />'
+            else:
+                res_img = '<span class="no-photo">Sem foto</span>'
+            rows.append(f'<tr><td>#{report["id"]}</td><td class="evidence-cell">{occ_img}</td><td class="evidence-cell">{res_img}</td></tr>')
+        rows.append('</tbody></table>')
+        return "\n".join(rows)
+
+    def generate_analysis(self, reports, by_category, by_period, by_month, stats):
+        lines = []
+        if by_category:
+            top_cat = max(by_category, key=lambda item: item[1])
+            lines.append(f"A categoria <strong>{escape(top_cat[0])}</strong> foi a mais reportada com {top_cat[1]} ocorrencia(s).")
+        if by_period:
+            top_period = max(by_period, key=lambda item: item[1])
+            lines.append(f"O periodo da <strong>{escape(top_period[0].lower())}</strong> apresentou o maior numero de ocorrencias registadas ({top_period[1]}).")
+        if stats["avg_wait_time"] and stats["avg_wait_time"] != "Ainda sem dados":
+            lines.append(f"O tempo medio de espera foi de <strong>{escape(stats['avg_wait_time'])}</strong>.")
+        if stats["avg_resolution_time"] and stats["avg_resolution_time"] != "Ainda sem dados":
+            lines.append(f"O tempo medio de resolucao foi de <strong>{escape(stats['avg_resolution_time'])}</strong>.")
+        if by_month and len(by_month) >= 2:
+            first = by_month[0][1]
+            last = by_month[-1][1]
+            if last > first:
+                lines.append("Verifica-se uma tendencia de <strong>crescimento</strong> nas ocorrencias nos ultimos meses.")
+            elif last < first:
+                lines.append("Verifica-se uma tendencia de <strong>reducao</strong> nas ocorrencias nos ultimos meses.")
+        return "<br/>".join(lines) if lines else "Sem dados suficientes para analise."
+
+    def generate_conclusions(self, reports, by_category, by_period, stats):
+        issues = []
+        if by_category:
+            top_cat = max(by_category, key=lambda item: item[1])
+            issues.append(f"Categoria mais critica: {top_cat[0]} ({top_cat[1]} ocorrencias)")
+        if by_period:
+            top_period = max(by_period, key=lambda item: item[1])
+            issues.append(f"Periodo mais critico: {top_period[0]} ({top_period[1]} ocorrencias)")
+        if stats["avg_wait_time"] and stats["avg_wait_time"] != "Ainda sem dados":
+            issues.append(f"Tempo medio de espera elevado: {stats['avg_wait_time']}")
+        if stats["resolution_rate"] and stats["resolution_rate"] != "0%":
+            try:
+                rate_num = int(stats["resolution_rate"].replace("%", ""))
+                if rate_num < 70:
+                    issues.append(f"Taxa de resolucao abaixo do ideal: {stats['resolution_rate']}")
+            except ValueError:
+                pass
+        return "<ul>" + "".join(f"<li>{escape(item)}</li>" for item in issues) + "</ul>" if issues else "<p>Sem observacoes relevantes.</p>"
+
+    def top_location(self, reports):
+        counts = {}
+        for report in reports:
+            key = self.report_location_title(report)
+            counts[key] = counts.get(key, 0) + 1
+        if not counts:
+            return "Sem dados"
+        return max(counts.items(), key=lambda item: item[1])[0]
+
+    def top_issue(self, reports):
+        counts = {}
+        for report in reports:
+            key = ISSUE_LABELS.get(report["issue_type"], report["issue_type"])
+            counts[key] = counts.get(key, 0) + 1
+        if not counts:
+            return "Sem dados"
+        return max(counts.items(), key=lambda item: item[1])[0]
+
+    def top_period(self, reports):
+        counts = {"Manha": 0, "Tarde": 0, "Noite": 0}
+        for report in reports:
+            period = get_period(report.get("created_at"))
+            label = PERIOD_LABELS.get(period, "Manha")
+            counts[label] = counts.get(label, 0) + 1
+        top = max(counts.items(), key=lambda item: item[1])
+        return top[0] if top[1] > 0 else "Sem dados"
 
     def redirect(self, location):
         self.send_response(HTTPStatus.SEE_OTHER)

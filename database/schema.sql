@@ -5,12 +5,13 @@ BEGIN
   END IF;
 
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'report_status') THEN
-    CREATE TYPE report_status AS ENUM ('pending', 'resolved', 'canceled');
+    CREATE TYPE report_status AS ENUM ('pending', 'in_progress', 'resolved', 'canceled');
   END IF;
 END
 $$;
 
 ALTER TYPE issue_type ADD VALUE IF NOT EXISTS 'water';
+ALTER TYPE report_status ADD VALUE IF NOT EXISTS 'in_progress';
 ALTER TYPE report_status ADD VALUE IF NOT EXISTS 'canceled';
 
 CREATE TABLE IF NOT EXISTS locations (
@@ -64,6 +65,12 @@ ALTER TABLE reports
   ADD COLUMN IF NOT EXISTS resolved_by_id INTEGER REFERENCES cleaning_users(id);
 
 ALTER TABLE reports
+  ADD COLUMN IF NOT EXISTS started_at TIMESTAMPTZ;
+
+ALTER TABLE reports
+  ADD COLUMN IF NOT EXISTS started_by_id INTEGER REFERENCES cleaning_users(id);
+
+ALTER TABLE reports
   ADD COLUMN IF NOT EXISTS categoria_utilizador VARCHAR(40);
 
 ALTER TABLE reports
@@ -97,6 +104,8 @@ CREATE TABLE IF NOT EXISTS cleaning_sessions (
 CREATE INDEX IF NOT EXISTS idx_reports_created_at ON reports(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status);
 CREATE INDEX IF NOT EXISTS idx_reports_location_id ON reports(location_id);
+CREATE INDEX IF NOT EXISTS idx_reports_started_at ON reports(started_at);
+CREATE INDEX IF NOT EXISTS idx_reports_resolved_at ON reports(resolved_at);
 CREATE INDEX IF NOT EXISTS idx_cleaning_sessions_user_id ON cleaning_sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_cleaning_sessions_expires_at ON cleaning_sessions(expires_at);
 
