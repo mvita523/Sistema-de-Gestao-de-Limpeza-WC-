@@ -178,7 +178,7 @@
             <button class="button button-secondary" id="prevUserPage" type="button">Anterior</button>
             <button class="button button-secondary" id="nextUserPage" type="button">Seguinte</button>
           </div>
-        </div>
+        </div> 
       </section>
 
       <div class="modal-backdrop" id="adminPhotosModal" hidden>
@@ -231,16 +231,15 @@
       </div>
     </main>
     <script>
-      const dashboardCharts = JSON.parse('{{ chart_payload }}');
-
+      const dashboardCharts = {{ chart_payload }};
       const categoriaSelect = document.getElementById('filterCategoria');
       const subcategoriaSelect = document.getElementById('filterSubcategoria');
-      const subcategoryData = {{ subcategory_options_json }};
+      const subcategoryData = JSON.parse('{{ subcategory_options_json }}');
       const selectedSubcategory = '{{ subcategoria_query }}';
 
       function syncSubcategories() {
         const selectedCategory = categoriaSelect.value || 'wc';
-        const options = subcategoryData[selectedCategory] || [];
+        let options = subcategoryData[selectedCategory] || [];
         subcategoriaSelect.innerHTML = '<option value="">Todas as localizacoes</option>';
         options.forEach(function (label) {
           const opt = document.createElement('option');

@@ -102,18 +102,10 @@ STUDENT_NUMBER_RE = re.compile(r"^[A-Za-z0-9_.\-/ ]{1,40}$")
 # ==========================================================
 
 def render_template(name, **context):
-    """Renderiza um ficheiro de template substituindo marcadores {{ key }}.
-
-    Args:
-        name (str): Nome do ficheiro de template no diretorio de templates.
-        **context: Variaveis a substituir no template.
-
-    Returns:
-        str: Conteudo HTML renderizado.
-    """
     content = (TEMPLATE_DIR / name).read_text(encoding="utf-8")
     for key, value in context.items():
         content = content.replace("{{ " + key + " }}", str(value))
+        content = content.replace("{{ " + key + " | safe }}", str(value))
     return content
 
 

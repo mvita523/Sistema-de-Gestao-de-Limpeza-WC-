@@ -162,9 +162,10 @@ class AppHandler(BaseHTTPRequestHandler):
             raise ValueError("Multipart form expected")
 
         raw_body = self.rfile.read(length)
+        header_type = f"Content-Type: {content_type}\r\n"
+        header_length = f"Content-Length: {length}\r\n"
         raw_message = (
-            f"Content-Type: {content_type}\r\n"
-            f"Content-Length: {length}\r\n"
+            header_type + header_length +
             "MIME-Version: 1.0\r\n\r\n"
         ).encode("utf-8") + raw_body
         message = BytesParser(policy=email_policy).parsebytes(raw_message)
@@ -903,49 +904,6 @@ class AppHandler(BaseHTTPRequestHandler):
             '</div>'
         )
 
-    def report_rows(self, reports, filters, csrf_token):
-        if not reports:
-            return '<tr><td colspan="11" class="empty">Nenhum reporte encontrado.</td></tr>'
-        rows = []
-        for report in reports:
-            level = waiting_level(report.get("created_at"), report.get("status"))
-            search_text = " ".join(
-                str(value or "")
-                for value in [
-                    report["id"],
-                    format_datetime(report["created_at"]),
-                    self.report_location_title(report),
-                    self.report_location_detail(report),
-                    LOCAL_CATEGORY_LABELS.get(report.get("categoria_local"), ""),
-                    USER_CATEGORY_LABELS.get(report.get("categoria_utilizador"), ""),
-                    report.get("curso"),
-                    PERIOD_LABELS.get(report.get("periodo"), ""),
-                    STATUS_LABELS.get(report["status"], ""),
-                    self.wait_duration_label(report),
-                    self.resolution_duration_label(report),
-                    report.get("resolved_by_name"),
-                    report.get("started_by_name"),
-                ]
-            )
-            rows.append(
-                f'<tr class="report-wait-{escape(level)}" data-search="{escape(search_text).lower()}">'
-                f'<td data-sort="{report["id"]}">#{report["id"]}</td>'
-                f'<td data-sort="{format_datetime(report["created_at"])}">{format_datetime(report["created_at"])}</td>'
-                f'<td>{escape(self.report_location_title(report))}</td>'
-                f'<td>{escape(ISSUE_LABELS[report["issue_type"]])}</td>'
-                f'<td>{escape(USER_CATEGORY_LABELS.get(report.get("categoria_utilizador"), report.get("categoria_utilizador") or ""))}</td>'
-                f'<td>{escape(report.get("curso") or "")}</td>'
-                f'<td>{escape(PERIOD_LABELS.get(report.get("periodo"), report.get("periodo") or ""))}</td>'
-                f'<td><span class="badge badge-status">{escape(STATUS_LABELS[report["status"]])}</span></td>'
-                f'<td>{escape(self.wait_duration_label(report))}</td>'
-                f'<td>{escape(self.resolution_duration_label(report))}</td>'
-                f'<td>{escape(report.get("resolved_by_name") or report.get("started_by_name") or "")}</td>'
-                f'<td class="photo-cell">{self.photo_link(report.get("foto_reporte"), "Ver Foto", "occurrence", report["id"]) or "<span class=\"no-photo\">Sem Foto</span>"}</td>'
-                f'<td class="photo-cell">{self.photo_link(report.get("foto_resolucao"), "Ver Foto", "resolution", report["id"]) or "<span class=\"no-photo\">Sem Foto</span>"}</td>'
-                "</tr>"
-            )
-        return "\n".join(rows)
-
     def cleaner_report_rows(self, reports, csrf_token):
         if not reports:
             return '<tr><td colspan="11" class="empty">Nenhuma ocorrencia encontrada.</td></tr>'
@@ -1153,22 +1111,6 @@ class AppHandler(BaseHTTPRequestHandler):
         if not path or not report_id:
             return ""
         return f'<a class="report-photo" href="/view-photo?id={report_id}&type={photo_type}" target="_blank" rel="noopener">{escape(label)}</a>'
-
-    def photo_thumbnail(self, path, label, show_no_photo=False):
-        if not path:
-            return '<span class="no-photo">Sem foto</span>' if show_no_photo else ""
-        return (
-            f'<a class="photo-thumb" href="{escape(path)}" target="_blank" rel="noopener">'
-            f'<img src="{escape(path)}" alt="{escape(label)}" loading="lazy"></a>'
-        )
-
-    def photo_thumbnail(self, path, label, show_no_photo=False):
-        if not path:
-            return '<span class="no-photo">Sem foto</span>' if show_no_photo else ""
-        return (
-            f'<a class="photo-thumb" href="{escape(path)}" target="_blank" rel="noopener">'
-            f'<img src="{escape(path)}" alt="{escape(label)}" loading="lazy"></a>'
-        )
 
     def count_by_day(self, reports):
         counts = {}

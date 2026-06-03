@@ -285,8 +285,9 @@
       </section>
 
     </main>
+    <script type="application/json" id="printChartsData">{{ chart_payload }}</script>
     <script>
-      const printCharts = JSON.parse('{{ chart_payload }}');
+      const printCharts = JSON.parse(document.getElementById('printChartsData').textContent);
       function drawBarChart(canvasId, rows, color) {
         const canvas = document.getElementById(canvasId);
         if (!canvas) return;
