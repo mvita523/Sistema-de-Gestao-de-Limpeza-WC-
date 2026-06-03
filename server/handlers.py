@@ -399,6 +399,7 @@ class AppHandler(BaseHTTPRequestHandler):
             canceled_count=stats["canceled_count"],
             resolution_rate=stats["resolution_rate"],
             false_alert_count=false_alert_count,
+            top_course=escape(self.top_course(reports)),
             cleaning_users_json=json.dumps([{
                 "id": u["id"],
                 "name": u["name"],
