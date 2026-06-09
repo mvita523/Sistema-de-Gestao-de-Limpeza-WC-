@@ -70,6 +70,10 @@ class AppHandler(BaseHTTPRequestHandler):
         if parsed.path == "/report":
             return self.show_report(parse_qs(parsed.query))
         if parsed.path == "/admin":
+            if not auth.valid_admin_cookie(self.headers):
+                csrf_token, is_new = auth.get_or_create_csrf_token(self.headers)
+                body = render_template("admin_login.html", error_html="", csrf_token=escape(csrf_token))
+                return self.html_response(body, csrf_token=csrf_token if is_new else None)
             return self.redirect("/admin/dashboard")
         if parsed.path == "/admin/dashboard":
             return self.show_admin_dashboard(parse_qs(parsed.query))
@@ -665,6 +669,10 @@ class AppHandler(BaseHTTPRequestHandler):
             )
             return self.html_response(body)
         csrf_token, is_new = auth.get_or_create_csrf_token(self.headers)
+        reports = database.get_cleaner_reports(cleaner["id"])
+        for report in reports:
+            report["false_alert_count"] = database.count_false_alerts_by_cleaner(cleaner["id"]) if report.get("falso_alerta") else 0
+        pending_count = sum(1 for report in reports if report["status"] == "pending")
         in_progress_count = sum(1 for report in reports if report["status"] == "in_progress")
         resolved_count = sum(1 for report in reports if report["status"] == "resolved")
         false_alert_count = sum(1 for report in reports if report.get("falso_alerta"))
