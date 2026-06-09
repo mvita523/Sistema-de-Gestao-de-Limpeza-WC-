@@ -70,7 +70,13 @@ class AppHandler(BaseHTTPRequestHandler):
         if parsed.path == "/report":
             return self.show_report(parse_qs(parsed.query))
         if parsed.path == "/admin":
-            return self.show_admin(parse_qs(parsed.query))
+            return self.redirect("/admin/dashboard")
+        if parsed.path == "/admin/dashboard":
+            return self.show_admin_dashboard(parse_qs(parsed.query))
+        if parsed.path == "/admin/reports":
+            return self.show_admin_reports(parse_qs(parsed.query))
+        if parsed.path == "/admin/users":
+            return self.show_admin_users(parse_qs(parsed.query))
         if parsed.path == "/admin/monthly-report":
             return self.show_monthly_report(parse_qs(parsed.query))
         if parsed.path == "/admin/monthly-report.pdf":
@@ -87,6 +93,8 @@ class AppHandler(BaseHTTPRequestHandler):
             return self.get_notification_email_api()
         if parsed.path == "/static/styles.css":
             return self.static_file(STATIC_DIR / "styles.css", "text/css; charset=utf-8")
+        if parsed.path == "/static/js/chart.umd.min.js":
+            return self.static_file(STATIC_DIR / "js" / "chart.umd.min.js", "application/javascript; charset=utf-8")
         if parsed.path.startswith("/static/uploads/"):
             return self.uploaded_file(parsed.path)
         match = re.fullmatch(r"/admin/reports/(\d+)/print", parsed.path)
@@ -235,12 +243,21 @@ class AppHandler(BaseHTTPRequestHandler):
         periodo = clean_text((query.get("periodo") or [""])[0], 40)
 
         issue_buttons = []
+        issue_emojis = {
+            "paper": "🧻",
+            "soap": "🧼",
+            "dirty": "🚽",
+            "smell": "👃",
+            "water": "💧",
+            "other": "❓",
+        }
         for issue_id, label in ISSUE_LABELS.items():
             checked = "checked" if selected_issue == issue_id else ""
+            emoji = issue_emojis.get(issue_id, "")
             issue_buttons.append(
-                '<label class="issue-option">'
+                '<label class="problem-card">'
                 f'<input type="radio" name="issue_type" value="{issue_id}" {checked} required>'
-                f"<span>{escape(label)}</span>"
+                f"<span>{escape(emoji)} {escape(label)}</span>"
                 "</label>"
             )
 
@@ -399,6 +416,7 @@ class AppHandler(BaseHTTPRequestHandler):
             canceled_count=stats["canceled_count"],
             resolution_rate=stats["resolution_rate"],
             false_alert_count=false_alert_count,
+            admin_tab="dashboard",
             top_course=escape(self.top_course(reports)),
             cleaning_users_json=json.dumps([{
                 "id": u["id"],
@@ -448,25 +466,203 @@ class AppHandler(BaseHTTPRequestHandler):
                     "byCategory": self.chart_rows(self.count_by_category(reports)),
                     "byStatus": self.chart_rows(self.count_by_status(reports)),
                     "byPeriod": self.chart_rows(self.count_by_period(reports)),
+                    "byCourse": self.chart_rows(self.count_by_course(reports)),
                 }
             ),
         )
         return self.html_response(body, csrf_token=csrf_token if is_new else None)
 
+    def show_admin_dashboard(self, query):
+        if not auth.valid_admin_cookie(self.headers):
+            return self.redirect("/admin")
+        csrf_token, is_new = auth.get_or_create_csrf_token(self.headers)
+        filters = self.admin_filters_from_query(query)
+        reports = self.reports_for_filters(filters)
+        monthly_reports = database.monthly_reports(filters["month"]) if re.fullmatch(r"\d{4}-\d{2}", filters["month"]) else []
+        stats = self.dashboard_stats(reports)
+        monthly_stats = self.monthly_stats(monthly_reports)
+        false_alert_count = sum(1 for report in reports if report.get("falso_alerta"))
+        body = render_template(
+            "admin.html",
+            csrf_token=escape(csrf_token),
+            settings_message=self.settings_message((query.get("settings") or [""])[0]),
+            users_message="",
+            cleaning_user_rows="",
+            cleaning_users_total=0,
+            cleaning_users_notify_count=0,
+            cleaning_users_no_notify_count=0,
+            total_count=len(reports),
+            pending_count=stats["pending_count"],
+            in_progress_count=stats["in_progress_count"],
+            resolved_count=stats["resolved_count"],
+            canceled_count=stats["canceled_count"],
+            resolution_rate=stats["resolution_rate"],
+            false_alert_count=false_alert_count,
+            top_course=escape(self.top_course(reports)),
+            cleaning_users_json="[]",
+            status_options=self.status_options(filters["status"]),
+            category_options=self.category_options(filters["categoria_local"]),
+            issue_filter_options=self.issue_filter_options(filters["issue_type"]),
+            course_filter_options=self.course_filter_options(filters["curso"]),
+            periodo_options=self.period_options(filters["periodo"]),
+            subcategory_options=self.subcategory_options(filters["categoria_local"], filters["subcategoria_local"]),
+            subcategory_options_json=json.dumps(LOCAL_SUBCATEGORY_OPTIONS),
+            report_rows="",
+            current_query=escape(urlencode({key: value for key, value in filters.items() if value and key != "month"})),
+            monthly_total=monthly_stats["total"],
+            monthly_resolved=monthly_stats["resolved"],
+            monthly_pending=monthly_stats["pending"],
+            monthly_resolution_rate=escape(monthly_stats["resolution_rate"]),
+            month_query=escape(filters["month"]),
+            date_from_query=escape(filters["date_from"]),
+            date_to_query=escape(filters["date_to"]),
+            subcategoria_query=escape(filters["subcategoria_local"]),
+            top_cleaners_html=self.top_cleaners_html(reports),
+            chart_payload=json.dumps(
+                {
+                    "byDay": self.chart_rows(self.count_by_day(reports)),
+                    "byMonth": self.chart_rows(self.count_by_month(reports)),
+                    "byIssue": self.chart_rows(self.count_by_issue(reports)),
+                    "byCategory": self.chart_rows(self.count_by_category(reports)),
+                    "byStatus": self.chart_rows(self.count_by_status(reports)),
+                    "byPeriod": self.chart_rows(self.count_by_period(reports)),
+                    "byCourse": self.chart_rows(self.count_by_course(reports)),
+                }
+            ),
+        )
+        return self.html_response(body, csrf_token=csrf_token if is_new else None)
+
+    def show_admin_reports(self, query):
+        if not auth.valid_admin_cookie(self.headers):
+            return self.redirect("/admin")
+        csrf_token, is_new = auth.get_or_create_csrf_token(self.headers)
+        filters = self.admin_filters_from_query(query)
+        reports = self.reports_for_filters(filters)
+        monthly_reports = database.monthly_reports(filters["month"]) if re.fullmatch(r"\d{4}-\d{2}", filters["month"]) else []
+        monthly_stats = self.monthly_stats(monthly_reports)
+        stats = self.dashboard_stats(reports)
+        false_alert_count = sum(1 for report in reports if report.get("falso_alerta"))
+        body = render_template(
+            "admin.html",
+            csrf_token=escape(csrf_token),
+            settings_message=self.settings_message((query.get("settings") or [""])[0]),
+            users_message="",
+            cleaning_user_rows="",
+            cleaning_users_total=0,
+            cleaning_users_notify_count=0,
+            cleaning_users_no_notify_count=0,
+            total_count=len(reports),
+            pending_count=stats["pending_count"],
+            in_progress_count=stats["in_progress_count"],
+            resolved_count=stats["resolved_count"],
+            canceled_count=stats["canceled_count"],
+            resolution_rate=stats["resolution_rate"],
+            false_alert_count=false_alert_count,
+            top_course="",
+            admin_tab="reports",
+            cleaning_users_json="[]",
+            status_options=self.status_options(filters["status"]),
+            category_options=self.category_options(filters["categoria_local"]),
+            issue_filter_options=self.issue_filter_options(filters["issue_type"]),
+            course_filter_options=self.course_filter_options(filters["curso"]),
+            periodo_options=self.period_options(filters["periodo"]),
+            subcategory_options=self.subcategory_options(filters["categoria_local"], filters["subcategoria_local"]),
+            subcategory_options_json=json.dumps(LOCAL_SUBCATEGORY_OPTIONS),
+            report_rows=self.report_rows(
+                reports,
+                {
+                    "status": filters["status"],
+                    "categoria_local": filters["categoria_local"],
+                    "subcategoria_local": filters["subcategoria_local"],
+                    "periodo": filters["periodo"],
+                    "issue_type": filters["issue_type"],
+                    "curso": filters["curso"],
+                    "date_from": filters["date_from"],
+                    "date_to": filters["date_to"],
+                },
+                csrf_token,
+            ),
+            current_query=escape(urlencode({key: value for key, value in filters.items() if value and key != "month"})),
+            monthly_total=monthly_stats["total"],
+            monthly_resolved=monthly_stats["resolved"],
+            monthly_pending=monthly_stats["pending"],
+            monthly_resolution_rate=escape(monthly_stats["resolution_rate"]),
+            month_query=escape(filters["month"]),
+            date_from_query=escape(filters["date_from"]),
+            date_to_query=escape(filters["date_to"]),
+            subcategoria_query=escape(filters["subcategoria_local"]),
+            top_cleaners_html="",
+            chart_payload=json.dumps({}),
+        )
+        return self.html_response(body, csrf_token=csrf_token if is_new else None)
+
+    def show_admin_users(self, query):
+        if not auth.valid_admin_cookie(self.headers):
+            return self.redirect("/admin")
+        csrf_token, is_new = auth.get_or_create_csrf_token(self.headers)
+        cleaning_users = database.list_cleaning_users()
+        for user in cleaning_users:
+            user["false_alert_count"] = database.count_false_alerts_by_cleaner(user["id"])
+        body = render_template(
+            "admin.html",
+            csrf_token=escape(csrf_token),
+            settings_message="",
+            users_message=self.users_message((query.get("users") or [""])[0]),
+            cleaning_user_rows=self.cleaning_user_rows(cleaning_users=cleaning_users, csrf_token=csrf_token),
+            cleaning_users_total=len(cleaning_users),
+            cleaning_users_notify_count=sum(1 for user in cleaning_users if user.get("receives_notifications")),
+            cleaning_users_no_notify_count=sum(1 for user in cleaning_users if not user.get("receives_notifications")),
+            total_count=0,
+            pending_count=0,
+            in_progress_count=0,
+            resolved_count=0,
+            canceled_count=0,
+            resolution_rate="0%",
+            false_alert_count=0,
+            top_course="",
+            admin_tab="users",
+            cleaning_users_json=json.dumps([{
+                "id": u["id"],
+                "name": u["name"],
+                "username": u["username"],
+                "email": u["email"] or "",
+                "receives_notifications": u["receives_notifications"],
+                "active": u["active"],
+                "false_alert_count": u.get("false_alert_count", 0)
+            } for u in cleaning_users]),
+            status_options="",
+            category_options="",
+            issue_filter_options="",
+            course_filter_options="",
+            periodo_options="",
+            subcategory_options="",
+            subcategory_options_json=json.dumps(LOCAL_SUBCATEGORY_OPTIONS),
+            report_rows="",
+            current_query="",
+            monthly_total=0,
+            monthly_resolved=0,
+            monthly_pending=0,
+            monthly_resolution_rate="0%",
+            month_query="",
+            date_from_query="",
+            date_to_query="",
+            subcategoria_query="",
+            top_cleaners_html="",
+            chart_payload=json.dumps({}),
+        )
+        return self.html_response(body, csrf_token=csrf_token if is_new else None)
+
     def show_cleaner(self, query):
         cleaner = database.get_cleaner_by_session(auth.get_cleaner_session_token(self.headers))
-        csrf_token, is_new = auth.get_or_create_csrf_token(self.headers)
         if not cleaner:
             error_status = (query.get("error") or [""])[0]
             body = render_template(
                 "cleaner_login.html",
-                csrf_token=escape(csrf_token),
+                csrf_token=escape(csrf_token) if 'csrf_token' in dir() else "",
                 error_html=self.cleaner_login_error(error_status),
             )
-            return self.html_response(body, csrf_token=csrf_token if is_new else None)
-
-        reports = database.get_cleaner_reports(cleaner["id"])
-        pending_count = sum(1 for report in reports if report["status"] == "pending")
+            return self.html_response(body)
+        csrf_token, is_new = auth.get_or_create_csrf_token(self.headers)
         in_progress_count = sum(1 for report in reports if report["status"] == "in_progress")
         resolved_count = sum(1 for report in reports if report["status"] == "resolved")
         false_alert_count = sum(1 for report in reports if report.get("falso_alerta"))
@@ -525,12 +721,12 @@ class AppHandler(BaseHTTPRequestHandler):
 
     def create_cleaning_user_form(self):
         if not auth.valid_admin_cookie(self.headers):
-            return self.redirect("/admin")
-        form = self.safe_form_or_redirect("/admin")
+            return self.redirect("/admin/users")
+        form = self.safe_form_or_redirect("/admin/users")
         if form is None:
             return
         if not auth.valid_csrf(self.headers, form):
-            return self.redirect("/admin?users=csrf")
+            return self.redirect("/admin/users?users=csrf")
 
         name = clean_text(form.get("name", ""), 120)
         username = clean_text(form.get("username", ""), 40).lower()
@@ -538,22 +734,22 @@ class AppHandler(BaseHTTPRequestHandler):
         password = form.get("password", "")
 
         if not name or not is_valid_username(username) or not is_valid_password(password) or (email and not is_valid_email(email)):
-            return self.redirect("/admin?users=invalid")
+            return self.redirect("/admin/users?users=invalid")
         try:
             database.create_cleaning_user(name, username, email, password)
         except psycopg2.IntegrityError:
-            return self.redirect("/admin?users=duplicate")
+            return self.redirect("/admin/users?users=duplicate")
         logger.info("cleaning_user_created username=%s", username)
-        return self.redirect("/admin?users=created")
+        return self.redirect("/admin/users?users=created")
 
     def update_cleaning_user_form(self, user_id):
         if not auth.valid_admin_cookie(self.headers):
-            return self.redirect("/admin")
-        form = self.safe_form_or_redirect("/admin")
+            return self.redirect("/admin/users")
+        form = self.safe_form_or_redirect("/admin/users")
         if form is None:
             return
         if not auth.valid_csrf(self.headers, form):
-            return self.redirect("/admin?users=csrf")
+            return self.redirect("/admin/users?users=csrf")
 
         name = clean_text(form.get("name", ""), 120)
         username = clean_text(form.get("username", ""), 40).lower()
@@ -562,23 +758,23 @@ class AppHandler(BaseHTTPRequestHandler):
         receives_notifications = form.get("receives_notifications") == "on"
 
         if not name or not is_valid_username(username) or (password and not is_valid_password(password)) or (email and not is_valid_email(email)):
-            return self.redirect("/admin?users=invalid")
+            return self.redirect("/admin/users?users=invalid")
         try:
             database.update_cleaning_user(user_id, name, username, email, receives_notifications, password)
         except psycopg2.IntegrityError:
-            return self.redirect("/admin?users=duplicate")
-        return self.redirect("/admin?users=updated")
+            return self.redirect("/admin/users?users=duplicate")
+        return self.redirect("/admin/users?users=updated")
 
     def delete_cleaning_user_form(self, user_id):
         if not auth.valid_admin_cookie(self.headers):
-            return self.redirect("/admin")
-        form = self.safe_form_or_redirect("/admin")
+            return self.redirect("/admin/users")
+        form = self.safe_form_or_redirect("/admin/users")
         if form is None:
             return
         if not auth.valid_csrf(self.headers, form):
-            return self.redirect("/admin?users=csrf")
+            return self.redirect("/admin/users?users=csrf")
         database.delete_cleaning_user(user_id)
-        return self.redirect("/admin?users=deleted")
+        return self.redirect("/admin/users?users=deleted")
 
     def login_cleaner(self):
         form = self.safe_form_or_redirect("/cleaner")
@@ -1000,6 +1196,7 @@ class AppHandler(BaseHTTPRequestHandler):
                     PERIOD_LABELS.get(report.get("periodo")),
                     STATUS_LABELS.get(report["status"]),
                     responsible,
+                    report.get("curso") or "",
                 ]
             )
             photo_count = sum(1 for path in [report.get("foto_reporte"), report.get("foto_resolucao")] if path)
@@ -1164,6 +1361,15 @@ class AppHandler(BaseHTTPRequestHandler):
             label = PERIOD_LABELS.get(period, "Manha")
             counts[label] = counts.get(label, 0) + 1
         return list(counts.items())
+
+    def count_by_course(self, reports):
+        counts = {}
+        for report in reports:
+            course = report.get("curso")
+            if not course:
+                continue
+            counts[course] = counts.get(course, 0) + 1
+        return sorted(counts.items(), key=lambda item: item[1], reverse=True)
 
     def top_course(self, reports):
         counts = {}

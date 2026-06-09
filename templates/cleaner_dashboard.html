@@ -20,19 +20,21 @@
         </form>
       </header>
 
-      <section class="stats stats-five">
-        <article><span>Total</span><strong>{{ total_count }}</strong></article>
-        <article><span>Pendentes</span><strong>{{ pending_count }}</strong></article>
-        <article><span>Em resolucao</span><strong>{{ in_progress_count }}</strong></article>
-        <article><span>Resolvidos</span><strong>{{ resolved_count }}</strong></article>
-        <article><span>Falsos alertas</span><strong>{{ false_alert_count }}</strong></article>
-      </section>
+
 
       <section class="panel account-panel">
         <h2>Dados do usuario</h2>
         <p><strong>Nome de utilizador:</strong> {{ cleaner_username }}</p>
         <p><strong>Email associado:</strong> {{ cleaner_email }}</p>
         <p><strong>Senha:</strong> ********</p>
+      </section>
+
+      <section class="stats stats-five">
+        <article><span>Total</span><strong>{{ total_count }}</strong></article>
+        <article><span>Pendentes</span><strong>{{ pending_count }}</strong></article>
+        <article><span>Em resolucao</span><strong>{{ in_progress_count }}</strong></article>
+        <article><span>Resolvidos</span><strong>{{ resolved_count }}</strong></article>
+        <article><span>Falsos alertas</span><strong>{{ false_alert_count }}</strong></article>
       </section>
 
       <section class="panel reports">

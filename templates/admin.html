@@ -3,233 +3,466 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Dashboard de limpeza WC Kimpa Vita</title>
+    <title>Painel Admin - WC Kimpa Vita</title>
     <link rel="stylesheet" href="/static/styles.css">
+    <script src="/static/js/chart.umd.min.js"></script>
+    <style>
+      .page { max-width: 100%; padding: 0; }
+      .app { display: flex; min-height: 100vh; }
+      .sidebar {
+        width: 250px;
+        background: #ffffff;
+        border-right: 1px solid #dbe4f0;
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.08);
+        display: flex;
+        flex-direction: column;
+        position: fixed;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        z-index: 30;
+      }
+      .sidebar-header {
+        padding: 22px 18px;
+        border-bottom: 1px solid #dbe4f0;
+        font-weight: 900;
+        color: #102027;
+        font-size: 1.05rem;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .sidebar-nav {
+        flex: 1;
+        padding: 12px 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .sidebar-link {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 12px;
+        border-radius: 10px;
+        color: #334155;
+        font-weight: 700;
+        font-size: 0.95rem;
+        text-decoration: none;
+        background: transparent;
+        border: 0;
+        cursor: pointer;
+        text-align: left;
+        width: 100%;
+        transition: background 0.2s ease, color 0.2s ease;
+      }
+      .sidebar-link:hover { background: #f8fbff; color: #102027; }
+      .sidebar-link.active { background: #eff6ff; color: #2563eb; }
+      .sidebar-footer { padding: 12px; border-top: 1px solid #dbe4f0; }
+      .sidebar-logout { width: 100%; justify-content: center; }
+      .main-content {
+        flex: 1;
+        margin-left: 250px;
+        padding: 24px;
+        min-height: 100vh;
+      }
+      .page-section { display: none; }
+      .page-section.active { display: block; }
+      @media (max-width: 1024px) {
+        .sidebar { display: none; }
+        .main-content { margin-left: 0; }
+      }
+    </style>
   </head>
   <body>
-    <main class="page">
-      <header class="topbar">
-        <div>
-          <p class="eyebrow">Operacoes</p>
-          <h1>Dashboard de limpeza WC Kimpa Vita</h1>
+    <div class="app">
+      <aside class="sidebar">
+        <div class="sidebar-header">
+          <span>📊</span>
+          <span>WC Kimpa Vita</span>
         </div>
-        <form method="post" action="/admin/logout">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-          <button class="button button-secondary" type="submit">Sair</button>
-        </form>
-      </header>
-
-      {{ settings_message }}
-      {{ users_message }}
-
-      <section class="kpi-grid">
-        <article class="kpi-card"><span>Total de Ocorrencias</span><strong>{{ total_count }}</strong></article>
-        <article class="kpi-card"><span>Pendentes</span><strong>{{ pending_count }}</strong></article>
-        <article class="kpi-card"><span>Em Resolucao</span><strong>{{ in_progress_count }}</strong></article>
-        <article class="kpi-card"><span>Resolvidas</span><strong>{{ resolved_count }}</strong></article>
-        <article class="kpi-card"><span>Taxa de Resolucao</span><strong>{{ resolution_rate }}</strong></article>
-        <article class="kpi-card"><span>Falsos Alertas</span><strong>{{ false_alert_count }}</strong></article>
-      </section>
-
-      <section class="analytics">
-        <article class="panel">
-          <h2>Ocorrencias por mes</h2>
-          <canvas class="chart-canvas" id="monthChart" height="220"></canvas>
-        </article>
-        <article class="panel">
-          <h2>Reportes por dia</h2>
-          <canvas class="chart-canvas" id="dayChart" height="220"></canvas>
-        </article>
-        <article class="panel">
-          <h2>Problemas reportados</h2>
-          <canvas class="chart-canvas" id="issueChart" height="220"></canvas>
-          <p class="muted chart-note">Curso com mais reclamacoes: {{ top_course }}</p>
-        </article>
-        <article class="panel">
-          <h2>Top 5 funcionarios (reports resolvidos)</h2>
-          <div class="top-cleaners-list">
-            {{ top_cleaners_html }}
-          </div>
-        </article>
-        <article class="panel">
-          <h2>Notificacoes por categoria</h2>
-          <canvas class="chart-canvas" id="categoryChart" height="220"></canvas>
-        </article>
-        <article class="panel">
-          <h2>Estados dos relatorios</h2>
-          <canvas class="chart-canvas" id="statusChart" height="220"></canvas>
-        </article>
-        <article class="panel">
-          <h2>Relatorios por periodo</h2>
-          <canvas class="chart-canvas" id="periodChart" height="220"></canvas>
-        </article>
-        <article class="panel">
-          <h2>Relatorio mensal</h2>
-          <form class="monthly-form" method="get" action="/admin/monthly-report">
-            <input type="month" name="month" value="{{ month_query }}">
-            <button class="button button-secondary" type="submit">Abrir relatorio</button>
-            <a class="button button-success" href="/admin/monthly-report.pdf?month={{ month_query }}">Exportar PDF</a>
-          </form>
-          <div class="monthly-summary">
-            <p><strong>{{ monthly_total }}</strong><span>Total do mes</span></p>
-            <p><strong>{{ monthly_resolved }}</strong><span>Resolvidas</span></p>
-            <p><strong>{{ monthly_pending }}</strong><span>Pendentes</span></p>
-            <p><strong>{{ monthly_resolution_rate }}</strong><span>Taxa de resolucao</span></p>
-          </div>
-        </article>
-      </section>
-
-      <section class="panel reports">
-        <form class="filters" method="get" action="/admin">
-          <select name="status">{{ status_options }}</select>
-          <select name="categoria_local" id="filterCategoria">{{ category_options }}</select>
-          <select name="subcategoria_local" id="filterSubcategoria">{{ subcategory_options }}</select>
-          <select name="issue_type">{{ issue_filter_options }}</select>
-          <select name="curso">{{ course_filter_options }}</select>
-          <select name="periodo">{{ periodo_options }}</select>
-          <input type="date" name="date_from" value="{{ date_from_query }}">
-          <input type="date" name="date_to" value="{{ date_to_query }}">
-          <button class="button button-secondary" type="submit">Pesquisar</button>
-          <a class="button button-secondary btn-outline" href="/admin">Limpar</a>
-        </form>
-        <div class="table-toolbar">
-          <input type="search" id="reportSearch" placeholder="Pesquisa instantanea na tabela...">
-          <div class="report-actions">
-            <a class="button button-secondary" href="/admin/reports/print?{{ current_query }}" target="_blank" rel="noopener">Imprimir Relatorio</a>
-            <a class="button button-success" href="/admin/reports/export-pdf?{{ current_query }}" target="_blank" rel="noopener">Exportar PDF</a>
-            <a class="button button-secondary" href="/admin/reports/export-excel?{{ current_query }}">Exportar Excel</a>
-          </div>
-        </div>
-        <div class="table-shell">
-          <table class="report-table" id="reportTable">
-            <thead>
-              <tr>
-                <th data-sort="number">ID</th>
-                <th data-sort="text">Data</th>
-                <th data-sort="text">Local</th>
-                <th data-sort="text">Categoria</th>
-                <th data-sort="text">Periodo</th>
-                <th data-sort="text">Estado</th>
-                <th data-sort="text">Espera</th>
-                <th data-sort="text">Resolucao</th>
-                <th data-sort="text">Resolvido Por</th>
-                <th data-sort="text">Fotos</th>
-                <th>Acoes</th>
-              </tr>
-            </thead>
-            <tbody>
-              {{ report_rows }}
-            </tbody>
-          </table>
-        </div>
-        <div class="pagination-row">
-          <span id="paginationInfo" class="muted"></span>
-          <div class="report-actions">
-            <button class="button button-secondary" id="prevPage" type="button">Anterior</button>
-            <button class="button button-secondary" id="nextPage" type="button">Seguinte</button>
-          </div>
-        </div>
-      </section>
-
-
-
-      <section class="panel users-panel">
-        <div class="section-header">
-          <h2>Utilizadores da limpeza</h2>
-          <button class="button button-success" type="button" id="openUserModal">Novo Utilizador</button>
-        </div>
-
-        <section class="stats stats-three compact-stats">
-          <article><span>Total</span><strong>{{ cleaning_users_total }}</strong></article>
-          <article><span>Recebem notificacoes</span><strong>{{ cleaning_users_notify_count }}</strong></article>
-          <article><span>Nao recebem</span><strong>{{ cleaning_users_no_notify_count }}</strong></article>
-        </section>
-
-        <div class="table-toolbar">
-          <input type="search" id="userSearch" placeholder="Pesquisar por nome, utilizador ou email...">
-          <select id="userFilter">
-            <option value="all">Todos os utilizadores</option>
-            <option value="notify">Recebem notificacoes</option>
-            <option value="no-notify">Nao recebem notificacoes</option>
-          </select>
-        </div>
-
-        <div class="table-shell">
-          <table class="report-table user-table" id="userTable">
-            <thead>
-              <tr>
-                <th data-sort="text">Nome</th>
-                <th data-sort="text">Utilizador</th>
-                <th data-sort="text">Email</th>
-                <th>Palavra-passe</th>
-                <th>Notificacoes</th>
-                <th>Acoes</th>
-              </tr>
-            </thead>
-            <tbody>
-              {{ cleaning_user_rows }}
-            </tbody>
-          </table>
-        </div>
-
-        <div class="pagination-row">
-          <span id="userPaginationInfo" class="muted"></span>
-          <div class="report-actions">
-            <button class="button button-secondary" id="prevUserPage" type="button">Anterior</button>
-            <button class="button button-secondary" id="nextUserPage" type="button">Seguinte</button>
-          </div>
-        </div> 
-      </section>
-
-      <div class="modal-backdrop" id="adminPhotosModal" hidden>
-        <div class="modal-panel photo-modal-panel" role="dialog" aria-modal="true" aria-labelledby="adminPhotosTitle">
-          <div class="section-header">
-            <h2 id="adminPhotosTitle">Fotos do relatorio</h2>
-            <button class="button button-secondary" type="button" id="closeAdminPhotos">Fechar</button>
-          </div>
-          <div class="photo-report-meta" id="adminPhotoMeta"></div>
-          <div class="photo-modal-grid">
-            <figure>
-              <figcaption>Foto da Ocorrencia</figcaption>
-              <div id="adminOccurrencePhotoSlot" class="photo-modal-slot">Sem foto disponivel</div>
-            </figure>
-            <figure>
-              <figcaption>Foto da Resolucao</figcaption>
-              <div id="adminResolutionPhotoSlot" class="photo-modal-slot">Sem foto disponivel</div>
-            </figure>
-          </div>
-        </div>
-      </div>
-
-      <div class="modal-backdrop" id="userModal" hidden>
-        <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="newUserTitle">
-          <div class="section-header">
-            <h2 id="newUserTitle">Novo Utilizador</h2>
-            <button class="button button-secondary" type="button" id="closeUserModal">Fechar</button>
-          </div>
-          <form class="modal-form" method="post" action="/admin/cleaning-users">
+        <nav class="sidebar-nav">
+          <a class="sidebar-link" href="/admin/dashboard">
+            <span>📈</span> Dashboard
+          </a>
+          <a class="sidebar-link" href="/admin/reports">
+            <span>📋</span> Relatórios
+          </a>
+          <a class="sidebar-link" href="/admin/users">
+            <span>👥</span> Utilizadores
+          </a>
+        </nav>
+        <div class="sidebar-footer">
+          <form method="post" action="/admin/logout">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <label>
-              <span>Nome</span>
-              <input type="text" name="name" required>
-            </label>
-            <label>
-              <span>Utilizador</span>
-              <input type="text" name="username" required>
-            </label>
-            <label>
-              <span>Email</span>
-              <input type="email" name="email" placeholder="email@exemplo.com">
-            </label>
-            <label>
-              <span>Palavra-passe</span>
-              <input type="password" name="password" minlength="8" required>
-            </label>
-            <button class="button button-success" type="submit">Criar utilizador</button>
+            <button class="button button-secondary sidebar-logout" type="submit">🚪 Sair</button>
           </form>
         </div>
+      </aside>
+      <main class="main-content">
+        <!-- DASHBOARD -->
+        <div id="dashboard-section" class="page-section">
+        <header class="admin-header">
+            <div class="admin-header-content">
+              <div>
+                <p class="eyebrow">Operacoes</p>
+                <h1>Dashboard</h1>
+                <p class="subtitle">Visao geral do sistema de gestao de ocorrencias</p>
+              </div>
+              <div style="display:flex;gap:10px;align-items:center;">
+                <a class="button button-secondary" href="/admin/monthly-report.pdf?month={{ month_query }}">Exportar Relatorio</a>
+              </div>
+            </div>
+          </header>
+
+          <section class="modern-kpi-grid">
+            <article class="modern-kpi-card kpi-blue">
+              <span class="kpi-icon">📋</span>
+              <div>
+                <span>Total de Ocorrencias</span>
+                <strong>{{ total_count }}</strong>
+              </div>
+            </article>
+            <article class="modern-kpi-card kpi-orange">
+              <span class="kpi-icon">⏳</span>
+              <div>
+                <span>Pendentes</span>
+                <strong>{{ pending_count }}</strong>
+              </div>
+            </article>
+            <article class="modern-kpi-card kpi-purple">
+              <span class="kpi-icon">🛠</span>
+              <div>
+                <span>Em Resolucao</span>
+                <strong>{{ in_progress_count }}</strong>
+              </div>
+            </article>
+            <article class="modern-kpi-card kpi-green">
+              <span class="kpi-icon">✅</span>
+              <div>
+                <span>Resolvidas</span>
+                <strong>{{ resolved_count }}</strong>
+              </div>
+            </article>
+            <article class="modern-kpi-card kpi-darkBlue">
+              <span class="kpi-icon">📈</span>
+              <div>
+                <span>Taxa de Resolucao</span>
+                <strong>{{ resolution_rate }}</strong>
+              </div>
+            </article>
+            <article class="modern-kpi-card kpi-red">
+              <span class="kpi-icon">🚨</span>
+              <div>
+                <span>Falsos Alertas</span>
+                <strong>{{ false_alert_count }}</strong>
+              </div>
+            </article>
+          </section>
+
+          <section class="panel filters-section">
+            <form class="filters" method="get" action="/admin/dashboard">
+              <select name="status">{{ status_options }}</select>
+              <select name="categoria_local" id="dashboardFilterCategoria">{{ category_options }}</select>
+              <select name="subcategoria_local" id="dashboardFilterSubcategoria">{{ subcategory_options }}</select>
+              <select name="issue_type">{{ issue_filter_options }}</select>
+              <select name="curso">{{ course_filter_options }}</select>
+              <select name="periodo">{{ periodo_options }}</select>
+              <input type="date" name="date_from" value="{{ date_from_query }}">
+              <input type="date" name="date_to" value="{{ date_to_query }}">
+              <button class="button button-secondary" type="submit">Aplicar</button>
+              <a class="button button-secondary btn-outline" href="/admin/dashboard">Limpar</a>
+            </form>
+          </section>
+
+          <section class="modern-analytics" style="margin-top:20px;">
+            <article class="panel chart-panel chart-full">
+              <h2>Ocorrencias por mes</h2>
+              <div class="chart-wrap"><canvas id="monthChart" height="220"></canvas></div>
+            </article>
+            <article class="panel chart-panel">
+              <h2>Reportes por dia</h2>
+              <div class="chart-wrap"><canvas id="dayChart" height="220"></canvas></div>
+              <div class="filter-badge" id="dayFilter" hidden>
+                <span id="dayFilterLabel"></span>
+                <button class="button button-ghost button-xs" id="clearDayFilter" type="button">Limpar</button>
+              </div>
+            </article>
+            <article class="panel chart-panel">
+              <h2>Estados dos relatorios</h2>
+              <div class="chart-wrap"><canvas id="statusChart" height="220"></canvas></div>
+            </article>
+            <article class="panel chart-panel">
+              <h2>Problemas reportados</h2>
+              <div class="chart-wrap chart-horizontal"><canvas id="issueChart" height="220"></canvas></div>
+              <div class="filter-badge" id="issueFilter" hidden>
+                <span id="issueFilterLabel"></span>
+                <button class="button button-ghost button-xs" id="clearIssueFilter" type="button">Limpar</button>
+              </div>
+            </article>
+            <article class="panel chart-panel">
+              <h2>Relatorios por periodo</h2>
+              <div class="chart-wrap"><canvas id="periodChart" height="220"></canvas></div>
+            </article>
+            <article class="panel chart-panel">
+              <h2>Relatorios por Curso</h2>
+              <div class="chart-wrap chart-horizontal"><canvas id="courseChart" height="220"></canvas></div>
+            </article>
+            <article class="panel chart-panel">
+              <h2>Top 5 funcionarios</h2>
+              <div class="ranking" id="topCleaners">{{ top_cleaners_html | safe }}</div>
+            </article>
+          </section>
+        </div>
+
+        <!-- RELATÓRIOS -->
+        <div id="reports-section" class="page-section">
+          <header class="admin-header">
+            <div class="admin-header-content">
+              <div>
+                <p class="eyebrow">Operacoes</p>
+                <h1>Relatorios</h1>
+                <p class="subtitle">Gestao de ocorrencias registadas</p>
+              </div>
+              <div style="display:flex;gap:10px;align-items:center;">
+                <a class="button button-secondary" href="/admin/reports/print?{{ current_query }}" target="_blank" rel="noopener">Imprimir</a>
+                <a class="button button-success" href="/admin/reports/export-pdf?{{ current_query }}" target="_blank" rel="noopener">Exportar PDF</a>
+                <a class="button button-secondary" href="/admin/reports/export-excel?{{ current_query }}">Exportar Excel</a>
+              </div>
+            </div>
+          </header>
+
+          <section class="modern-kpi-grid">
+            <article class="modern-kpi-card kpi-blue">
+              <span class="kpi-icon">📋</span>
+              <div>
+                <span>Total de Ocorrencias</span>
+                <strong>{{ total_count }}</strong>
+              </div>
+            </article>
+            <article class="modern-kpi-card kpi-orange">
+              <span class="kpi-icon">⏳</span>
+              <div>
+                <span>Pendentes</span>
+                <strong>{{ pending_count }}</strong>
+              </div>
+            </article>
+            <article class="modern-kpi-card kpi-purple">
+              <span class="kpi-icon">🛠</span>
+              <div>
+                <span>Em Resolucao</span>
+                <strong>{{ in_progress_count }}</strong>
+              </div>
+            </article>
+            <article class="modern-kpi-card kpi-green">
+              <span class="kpi-icon">✅</span>
+              <div>
+                <span>Resolvidas</span>
+                <strong>{{ resolved_count }}</strong>
+              </div>
+            </article>
+            <article class="modern-kpi-card kpi-darkBlue">
+              <span class="kpi-icon">📈</span>
+              <div>
+                <span>Taxa de Resolucao</span>
+                <strong>{{ resolution_rate }}</strong>
+              </div>
+            </article>
+            <article class="modern-kpi-card kpi-red">
+              <span class="kpi-icon">🚨</span>
+              <div>
+                <span>Falsos Alertas</span>
+                <strong>{{ false_alert_count }}</strong>
+              </div>
+            </article>
+          </section>
+
+          <section class="panel reports">
+            <form class="filters" method="get" action="/admin/reports">
+              <select name="status">{{ status_options }}</select>
+              <select name="categoria_local" id="filterCategoria">{{ category_options }}</select>
+              <select name="subcategoria_local" id="filterSubcategoria">{{ subcategory_options }}</select>
+              <select name="issue_type">{{ issue_filter_options }}</select>
+              <select name="curso">{{ course_filter_options }}</select>
+              <select name="periodo">{{ periodo_options }}</select>
+              <input type="date" name="date_from" value="{{ date_from_query }}">
+              <input type="date" name="date_to" value="{{ date_to_query }}">
+              <button class="button button-secondary" type="submit">Aplicar</button>
+              <a class="button button-secondary btn-outline" href="/admin/reports">Limpar</a>
+            </form>
+            <div class="table-toolbar">
+              <input type="search" id="reportSearch" placeholder="Pesquisa instantanea na tabela...">
+            </div>
+            <div class="table-shell">
+              <table class="report-table modern-table" id="reportTable">
+                <thead>
+                  <tr>
+                    <th data-sort="number">ID</th>
+                    <th data-sort="text">Data</th>
+                    <th data-sort="text">Local</th>
+                    <th data-sort="text">Categoria</th>
+                    <th data-sort="text">Periodo</th>
+                    <th data-sort="text">Estado</th>
+                    <th data-sort="text">Espera</th>
+                    <th data-sort="text">Resolucao</th>
+                    <th data-sort="text">Resolvido Por</th>
+                    <th data-sort="text">Fotos</th>
+                    <th>Acoes</th>
+                  </tr>
+                </thead>
+                <tbody>{{ report_rows }}</tbody>
+              </table>
+            </div>
+            <div class="pagination-row modern-pagination">
+              <span id="paginationInfo" class="muted"></span>
+              <div class="report-actions">
+                <button class="button button-secondary" id="prevPage" type="button">Anterior</button>
+                <button class="button button-secondary" id="nextPage" type="button">Seguinte</button>
+              </div>
+            </div>
+            <section class="monthly-report-card">
+              <h3>📄 Relatório Mensal</h3>
+              <form id="monthly-report-form" class="monthly-form report-actions" method="get" action="/admin/monthly-report">
+                <input type="month" name="month" value="{{ month_query }}">
+                <button class="button button-secondary" type="submit">Abrir</button>
+                <a class="button button-success" href="/admin/monthly-report.pdf?month={{ month_query }}">Exportar PDF</a>
+              </form>
+              <div class="monthly-summary">
+                <p><span>Total</span><strong>{{ monthly_total }}</strong></p>
+                <p><span>Resolvidas</span><strong>{{ monthly_resolved }}</strong></p>
+                <p><span>Pendentes</span><strong>{{ monthly_pending }}</strong></p>
+                <p><span>Taxa</span><strong>{{ monthly_resolution_rate }}</strong></p>
+              </div>
+            </section>
+          </section>
+        </div>
+
+        <!-- UTILIZADORES -->
+        <div id="users-section" class="page-section">
+          <header class="admin-header">
+            <div class="admin-header-content">
+              <div>
+                <p class="eyebrow">Operacoes</p>
+                <h1>Utilizadores</h1>
+                <p class="subtitle">Gerir funcionarios e permissoes</p>
+              </div>
+              <div style="display:flex;gap:10px;align-items:center;">
+                <button class="button button-success" type="button" id="openUserModal">Novo Utilizador</button>
+              </div>
+            </div>
+          </header>
+
+          <section class="modern-kpi-grid">
+            <article class="modern-kpi-card kpi-blue">
+              <span class="kpi-icon">👥</span>
+              <div>
+                <span>Total de Utilizadores</span>
+                <strong>{{ cleaning_users_total }}</strong>
+              </div>
+            </article>
+            <article class="modern-kpi-card kpi-green">
+              <span class="kpi-icon">🔔</span>
+              <div>
+                <span>Recebem notificacoes</span>
+                <strong>{{ cleaning_users_notify_count }}</strong>
+              </div>
+            </article>
+            <article class="modern-kpi-card kpi-red">
+              <span class="kpi-icon">🔕</span>
+              <div>
+                <span>Nao recebem notificacoes</span>
+                <strong>{{ cleaning_users_no_notify_count }}</strong>
+              </div>
+            </article>
+          </section>
+
+          <div class="table-toolbar">
+              <input type="search" id="userSearch" placeholder="Pesquisar por nome, utilizador ou email...">
+              <select id="userFilter">
+                <option value="all">Todos os utilizadores</option>
+                <option value="notify">Recebem notificacoes</option>
+                <option value="no-notify">Nao recebem</option>
+              </select>
+            </div>
+
+            <div class="table-shell">
+              <table class="report-table user-table modern-table" id="userTable">
+                <thead>
+                  <tr>
+                    <th data-sort="text">Nome</th>
+                    <th data-sort="text">Utilizador</th>
+                    <th data-sort="text">Email</th>
+                    <th>Palavra-passe</th>
+                    <th>Notificacoes</th>
+                    <th>Acoes</th>
+                  </tr>
+                </thead>
+                <tbody>{{ cleaning_user_rows }}</tbody>
+              </table>
+            </div>
+
+            <div class="pagination-row modern-pagination">
+              <span id="userPaginationInfo" class="muted"></span>
+              <div class="report-actions">
+                <button class="button button-secondary" id="prevUserPage" type="button">Anterior</button>
+                <button class="button button-secondary" id="nextUserPage" type="button">Seguinte</button>
+              </div>
+            </div>
+          </section>
+        </div>
+      </main>
+    </div>
+
+    <!-- Modais -->
+    <div class="modal-backdrop" id="adminPhotosModal" hidden>
+      <div class="modal-panel photo-modal-panel" role="dialog" aria-modal="true" aria-labelledby="adminPhotosTitle">
+        <div class="section-header">
+          <h2 id="adminPhotosTitle">Fotos do relatorio</h2>
+          <button class="button button-secondary" type="button" id="closeAdminPhotos">Fechar</button>
+        </div>
+        <div class="photo-report-meta" id="adminPhotoMeta"></div>
+        <div class="photo-modal-grid">
+          <figure>
+            <figcaption>Foto da Ocorrencia</figcaption>
+            <div id="adminOccurrencePhotoSlot" class="photo-modal-slot">Sem foto disponivel</div>
+          </figure>
+          <figure>
+            <figcaption>Foto da Resolucao</figcaption>
+            <div id="adminResolutionPhotoSlot" class="photo-modal-slot">Sem foto disponivel</div>
+          </figure>
+        </div>
       </div>
-    </main>
+    </div>
+
+    <div class="modal-backdrop" id="userModal" hidden>
+      <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="newUserTitle">
+        <div class="section-header">
+          <h2 id="newUserTitle">Novo Utilizador</h2>
+          <button class="button button-secondary" type="button" id="closeUserModal">Fechar</button>
+        </div>
+        <form class="modal-form" method="post" action="/admin/cleaning-users">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <label>
+            <span>Nome</span>
+            <input type="text" name="name" required>
+          </label>
+          <label>
+            <span>Utilizador</span>
+            <input type="text" name="username" required>
+          </label>
+          <label>
+            <span>Email</span>
+            <input type="email" name="email" placeholder="email@exemplo.com">
+          </label>
+          <label>
+            <span>Palavra-passe</span>
+            <input type="password" name="password" minlength="8" required>
+          </label>
+          <button class="button button-success" type="submit">Criar utilizador</button>
+        </form>
+      </div>
+    </div>
+
     <script>
       const dashboardCharts = {{ chart_payload }};
       const categoriaSelect = document.getElementById('filterCategoria');
@@ -249,7 +482,6 @@
           subcategoriaSelect.appendChild(opt);
         });
       }
-
       categoriaSelect.addEventListener('change', syncSubcategories);
       syncSubcategories();
 
@@ -259,40 +491,33 @@
         const ctx = canvas.getContext('2d');
         const ratio = window.devicePixelRatio || 1;
         const width = Math.min(canvas.parentElement.clientWidth, window.innerWidth - 32);
-        const height = 200;
-
+        const height = 220;
         ctx.setTransform(1, 0, 0, 1, 0, 0);
-
         canvas.width = width * ratio;
         canvas.height = height * ratio;
-
         canvas.style.width = width + 'px';
         canvas.style.maxWidth = '100%';
         canvas.style.height = height + 'px';
         ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
         ctx.clearRect(0, 0, width, height);
-
         if (!rows.length) {
           ctx.fillStyle = '#637381';
           ctx.font = '600 14px Inter, ui-sans-serif, system-ui, sans-serif';
           ctx.fillText('Sem dados para mostrar.', 10, 22);
           return;
         }
-
         const padding = { top: 14, right: 14, bottom: 44, left: 36 };
         const chartWidth = width - padding.left - padding.right;
         const chartHeight = height - padding.top - padding.bottom;
         const maxValue = Math.max(...rows.map((row) => row.value), 1);
         const barGap = 8;
         const barWidth = Math.max(14, (chartWidth - barGap * (rows.length - 1)) / rows.length);
-
         ctx.strokeStyle = '#dbe4f0';
         ctx.beginPath();
         ctx.moveTo(padding.left, padding.top);
         ctx.lineTo(padding.left, padding.top + chartHeight);
         ctx.lineTo(padding.left + chartWidth, padding.top + chartHeight);
         ctx.stroke();
-
         rows.forEach(function (row, index) {
           const barHeight = Math.round((row.value / maxValue) * chartHeight);
           const x = padding.left + index * (barWidth + barGap);
@@ -312,13 +537,302 @@
         });
       }
 
+      function drawStatusDoughnut(canvasId, rows) {
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        const ratio = window.devicePixelRatio || 1;
+        const width = Math.min(canvas.parentElement.clientWidth, window.innerWidth - 32);
+        const height = 260;
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        canvas.width = width * ratio;
+        canvas.height = height * ratio;
+        canvas.style.width = width + 'px';
+        canvas.style.maxWidth = '100%';
+        canvas.style.height = height + 'px';
+        ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+        ctx.clearRect(0, 0, width, height);
+        const colors = ['#f59e0b', '#8b5cf6', '#10b981', '#ef4444'];
+        const statusKeys = ['Pendente', 'Em Resolucao', 'Resolvido', 'Cancelado'];
+        const data = statusKeys.map((label) => {
+          const item = (rows || []).find((r) => r.label === label);
+          return { label, value: item ? item.value : 0 };
+        });
+        const total = data.reduce((sum, item) => sum + item.value, 0);
+        if (!total) {
+          ctx.fillStyle = '#637381';
+          ctx.font = '600 14px Inter, ui-sans-serif, system-ui, sans-serif';
+          ctx.fillText('Sem dados para mostrar.', 10, 22);
+          return;
+        }
+        const centerX = width / 2;
+        const centerY = height / 2;
+        const outerRadius = Math.max(10, Math.min(width, height) / 2 - 40);
+        const innerRadius = Math.max(5, outerRadius * 0.65);
+        let startAngle = -Math.PI / 2;
+        data.forEach((item, index) => {
+          if (!item.value) return;
+          const sliceAngle = (item.value / total) * 2 * Math.PI;
+          const endAngle = startAngle + sliceAngle;
+          ctx.beginPath();
+          ctx.moveTo(centerX, centerY);
+          ctx.arc(centerX, centerY, outerRadius, startAngle, endAngle);
+          ctx.closePath();
+          ctx.fillStyle = colors[index] || '#94a3b8';
+          ctx.fill();
+          const midAngle = startAngle + sliceAngle / 2;
+          const labelRadius = outerRadius + 18;
+          const labelX = centerX + Math.cos(midAngle) * labelRadius;
+          const labelY = centerY + Math.sin(midAngle) * labelRadius;
+          ctx.fillStyle = '#102027';
+          ctx.font = '700 12px Inter, ui-sans-serif, system-ui, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText(`${item.label}: ${item.value}`, labelX, labelY);
+          startAngle = endAngle;
+        });
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, innerRadius, 0, 2 * Math.PI);
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+      }
+
+      function drawPeriodPie(canvasId, rows) {
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        const ratio = window.devicePixelRatio || 1;
+        const width = Math.min(canvas.parentElement.clientWidth, window.innerWidth - 32);
+        const height = 260;
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        canvas.width = width * ratio;
+        canvas.height = height * ratio;
+        canvas.style.width = width + 'px';
+        canvas.style.maxWidth = '100%';
+        canvas.style.height = height + 'px';
+        ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+        ctx.clearRect(0, 0, width, height);
+        const colors = ['#3b82f6', '#f59e0b', '#6366f1'];
+        const periodKeys = ['Manha', 'Tarde', 'Noite'];
+        const data = periodKeys.map((label) => {
+          const item = (rows || []).find((r) => r.label === label);
+          return { label, value: item ? item.value : 0 };
+        });
+        const total = data.reduce((sum, item) => sum + item.value, 0);
+        if (!total) {
+          ctx.fillStyle = '#637381';
+          ctx.font = '600 14px Inter, ui-sans-serif, system-ui, sans-serif';
+          ctx.fillText('Sem dados para mostrar.', 10, 22);
+          return;
+        }
+        const centerX = width / 2;
+        const centerY = height / 2;
+        const radius = Math.max(10, Math.min(width, height) / 2 - 40);
+        let startAngle = -Math.PI / 2;
+        data.forEach((item, index) => {
+          if (!item.value) return;
+          const sliceAngle = (item.value / total) * 2 * Math.PI;
+          const endAngle = startAngle + sliceAngle;
+          ctx.beginPath();
+          ctx.moveTo(centerX, centerY);
+          ctx.arc(centerX, centerY, radius, startAngle, endAngle);
+          ctx.closePath();
+          ctx.fillStyle = colors[index] || '#94a3b8';
+          ctx.fill();
+          startAngle = endAngle;
+        });
+        const legendY = height - 30;
+        const legendStartX = width / 2 - 80;
+        data.forEach((item, index) => {
+          const x = legendStartX + index * 70;
+          ctx.fillStyle = colors[index] || '#94a3b8';
+          ctx.fillRect(x, legendY, 10, 10);
+          ctx.fillStyle = '#334155';
+          ctx.font = '600 11px Inter, ui-sans-serif, system-ui, sans-serif';
+          ctx.textAlign = 'left';
+          ctx.fillText(item.label, x + 14, legendY + 9);
+        });
+      }
+
+      let activeMonthFilter = null;
+      let activeDayFilter = null;
+
+      function drawTimelineChart(canvasId, rows, options) {
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        const ratio = window.devicePixelRatio || 1;
+        const width = Math.min(canvas.parentElement.clientWidth, window.innerWidth - 32);
+        const height = 240;
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        canvas.width = width * ratio;
+        canvas.height = height * ratio;
+        canvas.style.width = width + 'px';
+        canvas.style.maxWidth = '100%';
+        canvas.style.height = height + 'px';
+        ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+        ctx.clearRect(0, 0, width, height);
+        if (!rows || !rows.length) {
+          ctx.fillStyle = '#637381';
+          ctx.font = '600 14px Inter, ui-sans-serif, system-ui, sans-serif';
+          ctx.fillText('Sem dados para mostrar.', 10, 22);
+          return;
+        }
+        const padding = { top: 20, right: 20, bottom: 36, left: 36 };
+        const chartWidth = width - padding.left - padding.right;
+        const chartHeight = height - padding.top - padding.bottom;
+        const maxValue = Math.max(...rows.map((row) => row.value), 1);
+        const pointGap = Math.max(24, chartWidth / (rows.length - 1 || 1));
+        const lineColor = options.line || '#2563eb';
+        const fillColor = options.fill || '#2563eb33';
+        function xFor(index) { return padding.left + index * pointGap; }
+        function yFor(value) { return padding.top + chartHeight - Math.round((value / maxValue) * chartHeight); }
+        ctx.beginPath();
+        ctx.moveTo(xFor(0), yFor(rows[0].value));
+        for (let i = 1; i < rows.length; i += 1) {
+          const prevX = xFor(i - 1), prevY = yFor(rows[i - 1].value), nextX = xFor(i), nextY = yFor(rows[i].value), midX = (prevX + nextX) / 2;
+          ctx.bezierCurveTo(midX, prevY, midX, nextY, nextX, nextY);
+        }
+        ctx.strokeStyle = lineColor;
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+        ctx.lineTo(xFor(rows.length - 1), padding.top + chartHeight);
+        ctx.lineTo(xFor(0), padding.top + chartHeight);
+        ctx.closePath();
+        ctx.fillStyle = fillColor;
+        ctx.fill();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2;
+        rows.forEach(function(row, index) {
+          const px = xFor(index), py = yFor(row.value);
+          ctx.beginPath();
+          ctx.arc(px, py, 4.5, 0, 2 * Math.PI);
+          ctx.fillStyle = lineColor;
+          ctx.fill();
+          ctx.stroke();
+          ctx.fillStyle = '#102027';
+          ctx.font = '700 11px Inter, ui-sans-serif, system-ui, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText(String(row.value), px, py - 10);
+          ctx.save();
+          ctx.translate(px, padding.top + chartHeight + 14);
+          ctx.rotate(-0.55);
+          ctx.fillStyle = '#637381';
+          ctx.font = '600 10px Inter, ui-sans-serif, system-ui, sans-serif';
+          ctx.fillText(String(row.label).slice(0, 12), 0, 0);
+          ctx.restore();
+        });
+        ctx.canvas._timelinePoints = rows.map(function(row, index) { return { x: xFor(index), y: yFor(row.value), row: row, index: index }; });
+      }
+
+      function handleTimelineClick(canvasId, onSelect) {
+        const canvas = document.getElementById(canvasId);
+        if (!canvas || !canvas._timelinePoints) return;
+        canvas.addEventListener('click', function(event) {
+          const rect = canvas.getBoundingClientRect();
+          const x = event.clientX - rect.left, y = event.clientY - rect.top, threshold = 18;
+          let best = null;
+          canvas._timelinePoints.forEach(function(point) {
+            const dx = point.x - x, dy = point.y - y, distance = Math.sqrt(dx * dx + dy * dy);
+            if (distance < threshold && (!best || distance < best.distance)) best = { distance: distance, point: point };
+          });
+          if (best && onSelect) onSelect(best.point);
+        });
+      }
+
+      let issueChartInstance = null;
+      const ISSUE_EMOJIS = {"Sem papel higienico":"🧻","Sem sabonete":"🧼","WC sujo":"🚽","Mau cheiro":"👃","Falta de Agua":"💧","Sem papel de mao":"📄","Outro":"❓"};
+      const ISSUE_COLORS = {"Sem sabonete":"#3B82F6","Falta de Agua":"#06B6D4","Sem papel higienico":"#8B5CF6","Mau cheiro":"#F59E0B","WC sujo":"#EF4444","Outro":"#94A3B8"};
+
+      function filterReportsByIssue(label) {
+        const searchInput = document.getElementById('reportSearch');
+        const clearBtn = document.getElementById('clearIssueFilter');
+        const badge = document.getElementById('issueFilter');
+        const badgeLabel = document.getElementById('issueFilterLabel');
+        if (!searchInput) return;
+        const cleanLabel = label.replace(/^[^\s]+\s/, '');
+        searchInput.value = cleanLabel;
+        searchInput.dispatchEvent(new Event('input'));
+        if (badge && badgeLabel && clearBtn) {
+          badge.hidden = false;
+          badgeLabel.textContent = 'Filtro ativo: ' + label;
+          clearBtn.onclick = function() { searchInput.value = ''; searchInput.dispatchEvent(new Event('input')); badge.hidden = true; };
+        }
+      }
+
+      function drawIssueHorizontalChart(canvasId, rows) {
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        if (typeof Chart === 'undefined') { ctx.fillText('Chart.js indisponivel.', 10, 22); return; }
+        const sorted = (rows || []).slice().sort((a, b) => b.value - a.value);
+        const total = sorted.reduce((sum, item) => sum + item.value, 0);
+        if (issueChartInstance) issueChartInstance.destroy();
+        issueChartInstance = new Chart(ctx, {
+          type: 'bar',
+          data: { labels: sorted.map(item => ((ISSUE_EMOJIS[item.label] || '') + ' ' + item.label).trim()), datasets: [{ label: 'Ocorrencias', data: sorted.map(item => item.value), backgroundColor: sorted.map(item => ISSUE_COLORS[item.label] || '#6366f1'), borderRadius: 8, barPercentage: 0.6 }] },
+          options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { backgroundColor: '#102027', callbacks: { label: (ctx) => { const v = ctx.raw || 0; const p = total ? Math.round((v / total) * 100) : 0; return ` ${v} ocorrencias (${p}%)`; } } } }, scales: { x: { beginAtZero: true, ticks: { color: '#637381' }, grid: { color: '#f1f5f9' } }, y: { ticks: { color: '#334155', font: { weight: '700' } }, grid: { display: false } } }, onClick: (evt, elements) => { if (elements.length > 0) { const idx = elements[0].index; filterReportsByIssue(sorted[idx].label); } } }
+        });
+      }
+
+      function drawCourseHorizontalChart(canvasId, rows) {
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        if (typeof Chart === 'undefined') { ctx.fillText('Chart.js indisponivel.', 10, 22); return; }
+        const sorted = (rows || []).slice().sort((a, b) => b.value - a.value);
+        const total = sorted.reduce((sum, item) => sum + item.value, 0);
+        const colors = ['#3B82F6','#06B6D4','#8B5CF6','#10B981','#F59E0B','#EF4444','#6366F1','#EC4899','#14B8A6','#F97316'];
+        new Chart(ctx, {
+          type: 'bar',
+          data: { labels: sorted.map(item => item.label), datasets: [{ label: 'Relatorios', data: sorted.map(item => item.value), backgroundColor: sorted.map((_, i) => colors[i % colors.length]), borderRadius: 8, barPercentage: 0.6 }] },
+          options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { backgroundColor: '#102027', callbacks: { label: (ctx) => { const v = ctx.raw || 0; const p = total ? Math.round((v / total) * 100) : 0; return ` ${v} relatorios (${p}%)`; } } } }, scales: { x: { beginAtZero: true, ticks: { color: '#637381' }, grid: { color: '#f1f5f9' } }, y: { ticks: { color: '#334155', font: { weight: '700' } }, grid: { display: false } } } }
+        });
+      }
+
       function renderCharts() {
-        drawBarChart('monthChart', dashboardCharts.byMonth, '#7c3aed');
-        drawBarChart('dayChart', dashboardCharts.byDay, '#2563eb');
-        drawBarChart('issueChart', dashboardCharts.byIssue, '#0f766e');
-        drawBarChart('categoryChart', dashboardCharts.byCategory, '#b45309');
-        drawBarChart('statusChart', dashboardCharts.byStatus, '#b45309');
-        drawBarChart('periodChart', dashboardCharts.byPeriod || [], '#7c3aed');
+        const monthRows = (dashboardCharts.byMonth || []).slice();
+        const dayRows = (dashboardCharts.byDay || []).slice();
+        drawTimelineChart('monthChart', monthRows, { line: '#2563eb', fill: '#2563eb33' });
+        drawTimelineChart('dayChart', dayRows, { line: '#7c3aed', fill: '#7c3aed33' });
+        drawStatusDoughnut('statusChart', dashboardCharts.byStatus);
+        drawIssueHorizontalChart('issueChart', dashboardCharts.byIssue);
+        drawBarChart('categoryChart', dashboardCharts.byCategory, '#f59e0b');
+        drawPeriodPie('periodChart', dashboardCharts.byPeriod);
+        drawCourseHorizontalChart('courseChart', dashboardCharts.byCourse);
+        const clearIssueBtn = document.getElementById('clearIssueFilter');
+        if (clearIssueBtn) {
+          clearIssueBtn.onclick = function() {
+            const searchInput = document.getElementById('reportSearch');
+            const badge = document.getElementById('issueFilter');
+            if (searchInput) { searchInput.value = ''; searchInput.dispatchEvent(new Event('input')); }
+            if (badge) badge.hidden = true;
+          };
+        }
+        const clearBtn = document.getElementById('clearDayFilter');
+        if (clearBtn) {
+          clearBtn.onclick = function() {
+            activeDayFilter = null;
+            activeMonthFilter = null;
+            const dayFilter = document.getElementById('dayFilter');
+            if (dayFilter) dayFilter.hidden = true;
+            renderCharts();
+          };
+        }
+        handleTimelineClick('monthChart', function(point) {
+          activeMonthFilter = point.row.label;
+          const monthPrefix = String(point.row.label).slice(0, 7);
+          const filteredDays = dayRows.filter(function(row) { return String(row.label).startsWith(monthPrefix); });
+          const dayFilter = document.getElementById('dayFilter');
+          const dayFilterLabel = document.getElementById('dayFilterLabel');
+          if (dayFilter) dayFilter.hidden = false;
+          if (dayFilterLabel) dayFilterLabel.textContent = 'Filtro ativo: ' + point.row.label;
+          drawTimelineChart('dayChart', filteredDays, { line: '#7c3aed', fill: '#7c3aed33' });
+          handleTimelineClick('dayChart', function(dayPoint) {
+            activeDayFilter = String(dayPoint.row.label);
+            if (dayFilterLabel) dayFilterLabel.textContent = 'Filtro ativo: ' + dayPoint.row.label;
+            drawTimelineChart('dayChart', filteredDays, { line: '#7c3aed', fill: '#7c3aed33' });
+          });
+        });
       }
 
       function setupReportTable() {
@@ -333,7 +847,6 @@
         let filtered = rows.slice();
         let page = 1;
         const pageSize = 12;
-
         function renderTable() {
           rows.forEach((row) => row.hidden = true);
           const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
@@ -344,14 +857,12 @@
           prev.disabled = page <= 1;
           next.disabled = page >= totalPages;
         }
-
         search.addEventListener('input', function () {
           const term = search.value.trim().toLowerCase();
-          filtered = rows.filter((row) => (row.dataset.search || row.textContent.toLowerCase()).includes(term));
+          filtered = rows.filter((row) => (row.dataset?.search || row.textContent.toLowerCase()).includes(term));
           page = 1;
           renderTable();
         });
-
         table.querySelectorAll('th[data-sort]').forEach(function (header, index) {
           header.addEventListener('click', function () {
             const direction = header.dataset.direction === 'asc' ? 'desc' : 'asc';
@@ -368,15 +879,8 @@
             search.dispatchEvent(new Event('input'));
           });
         });
-
-        prev.addEventListener('click', function () {
-          page -= 1;
-          renderTable();
-        });
-        next.addEventListener('click', function () {
-          page += 1;
-          renderTable();
-        });
+        prev.addEventListener('click', function () { page -= 1; renderTable(); });
+        next.addEventListener('click', function () { page += 1; renderTable(); });
         renderTable();
       }
 
@@ -393,25 +897,19 @@
         let filtered = rows.slice();
         let page = 1;
         const pageSize = 8;
-
         function applyFilters() {
           const term = search.value.trim().toLowerCase();
           const mode = filter.value;
           filtered = rows.filter(function (row) {
-            const matchesSearch = (row.dataset.search || row.textContent.toLowerCase()).includes(term);
-            const receives = row.dataset.notify === 'yes';
+            const matchesSearch = (row.dataset?.search || row.textContent.toLowerCase()).includes(term);
+            const receives = row.dataset?.notify === 'yes';
             const falseAlerts = parseInt(row.dataset.falseAlerts || '0', 10);
-            const matchesFilter =
-              mode === 'all' ||
-              (mode === 'notify' && receives) ||
-              (mode === 'no-notify' && !receives) ||
-              (mode === 'false-alerts' && falseAlerts > 0);
+            const matchesFilter = mode === 'all' || (mode === 'notify' && receives) || (mode === 'no-notify' && !receives) || (mode === 'false-alerts' && falseAlerts > 0);
             return matchesSearch && matchesFilter;
           });
           page = 1;
           renderTable();
         }
-
         function renderTable() {
           rows.forEach((row) => row.hidden = true);
           const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
@@ -422,7 +920,6 @@
           prev.disabled = page <= 1;
           next.disabled = page >= totalPages;
         }
-
         table.querySelectorAll('th[data-sort]').forEach(function (header, index) {
           header.addEventListener('click', function () {
             const direction = header.dataset.direction === 'asc' ? 'desc' : 'asc';
@@ -439,7 +936,6 @@
             applyFilters();
           });
         });
-
         rows.forEach(function (row) {
           const editButton = row.querySelector('.action-edit-button');
           const saveButton = row.querySelector('.action-save-button');
@@ -450,64 +946,36 @@
           const nameInput = row.querySelector('input[name="name"]');
           const usernameInput = row.querySelector('input[name="username"]');
           const emailInput = row.querySelector('input[name="email"]');
-
           const initialValues = {
             name: nameInput ? nameInput.value : '',
             username: usernameInput ? usernameInput.value : '',
             email: emailInput ? emailInput.value : '',
             receives_notifications: notifyCheckbox ? notifyCheckbox.checked : false,
           };
-
           function setEditing(editing) {
             row.classList.toggle('is-editing', editing);
-            row.querySelectorAll('.row-input').forEach(function (input) {
-              input.disabled = !editing;
-              input.readOnly = !editing;
-            });
+            row.querySelectorAll('.row-input').forEach(function (input) { input.disabled = !editing; input.readOnly = !editing; });
             if (notifyCheckbox) notifyCheckbox.disabled = !editing;
             if (saveButton) saveButton.hidden = !editing;
             if (cancelButton) cancelButton.hidden = !editing;
             if (editButton) editButton.hidden = editing;
-            if (!editing && passwordInput) {
-              passwordInput.value = '';
-              passwordInput.type = 'password';
-            }
+            if (!editing && passwordInput) { passwordInput.value = ''; passwordInput.type = 'password'; }
             if (editing && passwordInput) passwordInput.focus();
           }
-
-          if (editButton) {
-            editButton.addEventListener('click', function () {
-              setEditing(true);
-            });
-          }
-
-          if (cancelButton) {
-            cancelButton.addEventListener('click', function () {
-              if (nameInput) nameInput.value = initialValues.name;
-              if (usernameInput) usernameInput.value = initialValues.username;
-              if (emailInput) emailInput.value = initialValues.email;
-              if (notifyCheckbox) notifyCheckbox.checked = initialValues.receives_notifications;
-              setEditing(false);
-            });
-          }
-
-          if (passwordToggle && passwordInput) {
-            passwordToggle.addEventListener('click', function () {
-              passwordInput.type = passwordInput.type === 'password' ? 'text' : 'password';
-            });
-          }
+          if (editButton) editButton.addEventListener('click', function () { setEditing(true); });
+          if (cancelButton) cancelButton.addEventListener('click', function () {
+            if (nameInput) nameInput.value = initialValues.name;
+            if (usernameInput) usernameInput.value = initialValues.username;
+            if (emailInput) emailInput.value = initialValues.email;
+            if (notifyCheckbox) notifyCheckbox.checked = initialValues.receives_notifications;
+            setEditing(false);
+          });
+          if (passwordToggle && passwordInput) passwordToggle.addEventListener('click', function () { passwordInput.type = passwordInput.type === 'password' ? 'text' : 'password'; });
         });
-
         search.addEventListener('input', applyFilters);
         filter.addEventListener('change', applyFilters);
-        prev.addEventListener('click', function () {
-          page -= 1;
-          renderTable();
-        });
-        next.addEventListener('click', function () {
-          page += 1;
-          renderTable();
-        });
+        prev.addEventListener('click', function () { page -= 1; renderTable(); });
+        next.addEventListener('click', function () { page += 1; renderTable(); });
         renderTable();
       }
 
@@ -516,17 +984,9 @@
         const openButton = document.getElementById('openUserModal');
         const closeButton = document.getElementById('closeUserModal');
         if (!modal || !openButton || !closeButton) return;
-        openButton.addEventListener('click', function () {
-          modal.hidden = false;
-          const firstInput = modal.querySelector('input[name="name"]');
-          if (firstInput) firstInput.focus();
-        });
-        closeButton.addEventListener('click', function () {
-          modal.hidden = true;
-        });
-        modal.addEventListener('click', function (event) {
-          if (event.target === modal) modal.hidden = true;
-        });
+        openButton.addEventListener('click', function () { modal.hidden = false; const firstInput = modal.querySelector('input[name="name"]'); if (firstInput) firstInput.focus(); });
+        closeButton.addEventListener('click', function () { modal.hidden = true; });
+        modal.addEventListener('click', function (event) { if (event.target === modal) modal.hidden = true; });
       }
 
       function setupAdminPhotos() {
@@ -536,108 +996,45 @@
         const resolutionSlot = document.getElementById('adminResolutionPhotoSlot');
         const meta = document.getElementById('adminPhotoMeta');
         if (!modal || !closeButton || !occurrenceSlot || !resolutionSlot || !meta) return;
-
         function fillSlot(slot, src, alt) {
           slot.innerHTML = '';
-          if (!src) {
-            slot.textContent = 'Sem foto disponivel';
-            return;
-          }
-          const link = document.createElement('a');
-          link.href = src;
-          link.target = '_blank';
-          link.rel = 'noopener';
-          const img = document.createElement('img');
-          img.src = src;
-          img.alt = alt;
-          link.appendChild(img);
-          slot.appendChild(link);
+          if (!src) { slot.textContent = 'Sem foto disponivel'; return; }
+          const link = document.createElement('a'); link.href = src; link.target = '_blank'; link.rel = 'noopener';
+          const img = document.createElement('img'); img.src = src; img.alt = alt; link.appendChild(img); slot.appendChild(link);
         }
-
         document.querySelectorAll('.admin-photos-button').forEach(function (button) {
           button.addEventListener('click', function () {
-            meta.innerHTML = [
-              ['ID', button.dataset.reportId || ''],
-              ['Data', button.dataset.reportDate || ''],
-              ['Local', button.dataset.reportLocation || ''],
-              ['Categoria', button.dataset.reportCategory || ''],
-              ['Estado', button.dataset.reportStatus || ''],
-              ['Funcionario', button.dataset.reportResponsible || 'Sem responsavel']
-            ].map(function (item) {
-              return '<p><strong>' + item[0] + ':</strong> ' + item[1] + '</p>';
-            }).join('');
+            meta.innerHTML = [['ID', button.dataset.reportId || ''], ['Data', button.dataset.reportDate || ''], ['Local', button.dataset.reportLocation || ''], ['Categoria', button.dataset.reportCategory || ''], ['Estado', button.dataset.reportStatus || ''], ['Funcionario', button.dataset.reportResponsible || 'Sem responsavel']].map((item) => `<p><strong>${item[0]}:</strong> ${item[1]}</p>`).join('');
             fillSlot(occurrenceSlot, button.dataset.occurrencePhoto || '', 'Foto da ocorrencia');
             fillSlot(resolutionSlot, button.dataset.resolutionPhoto || '', 'Foto da resolucao');
             modal.hidden = false;
           });
         });
+        closeButton.addEventListener('click', function () { modal.hidden = true; });
+        modal.addEventListener('click', function (event) { if (event.target === modal) modal.hidden = true; });
+      }
 
-        closeButton.addEventListener('click', function () {
-          modal.hidden = true;
-        });
-        modal.addEventListener('click', function (event) {
-          if (event.target === modal) modal.hidden = true;
-        });
+      function switchTab(tabId) {
+        document.querySelectorAll('.page-section').forEach(function (el) { el.classList.remove('active'); });
+        var target = document.getElementById(tabId);
+        if (target) target.classList.add('active');
+        if (tabId === 'reports-section') setupReportTable();
+        if (tabId === 'users-section') setupUserTable();
+        if (tabId === 'dashboard-section') renderCharts();
       }
 
       document.addEventListener('DOMContentLoaded', function () {
-    renderCharts();
-    setupReportTable();
-    setupUserTable();
-    setupUserModal();
-    setupAdminPhotos();
-
-    const deleteForms = document.querySelectorAll(
-        'form[action*="/admin/cleaning-users/delete/"]'
-    );
-
-    deleteForms.forEach(function (form) {
-        form.addEventListener('submit', function (event) {
-            const confirmed = window.confirm(
-                'Tem certeza de que deseja eliminar este utilizador? Esta ação não pode ser desfeita.'
-            );
-
-            if (!confirmed) {
-                event.preventDefault();
-            }
+        var tab = window.location.pathname.includes('/reports') ? 'reports-section' : (window.location.pathname.includes('/users') ? 'users-section' : 'dashboard-section');
+        switchTab(tab);
+        setupUserModal();
+        setupAdminPhotos();
+        const deleteForms = document.querySelectorAll('form[action*="/admin/cleaning-users/delete/"]');
+        deleteForms.forEach(function (form) {
+          form.addEventListener('submit', function (event) {
+            if (!window.confirm('Tem certeza de que deseja eliminar este utilizador? Esta ação não pode ser desfeita.')) event.preventDefault();
+          });
         });
-    });
-});
-
-      function setupResponsiveTable() {
-        const table = document.getElementById('reportTable');
-        if (!table) return;
-        if (window.innerWidth < 900) {
-          table.parentElement.style.overflowX = 'auto';
-          table.style.minWidth = '1100px';
-        } else {
-          table.parentElement.style.overflowX = 'visible';
-          table.style.minWidth = '';
-        }
-      }
-
-      function setupResponsiveForms() {
-        const filters = document.querySelector('.filters');
-        const actions = document.querySelector('.table-toolbar .report-actions');
-        if (!filters || !actions) return;
-        if (window.innerWidth < 760) {
-          filters.style.flexWrap = 'wrap';
-          actions.style.flexWrap = 'wrap';
-          actions.style.justifyContent = 'flex-start';
-        } else {
-          filters.style.flexWrap = 'nowrap';
-          actions.style.flexWrap = 'wrap';
-          actions.style.justifyContent = 'flex-end';
-        }
-      }
-
-      function applyResponsive() {
-        setupResponsiveTable();
-        setupResponsiveForms();
-      }
-
-      window.addEventListener('resize', applyResponsive);
-      window.addEventListener('DOMContentLoaded', applyResponsive);
+      });
     </script>
   </body>
 </html>
