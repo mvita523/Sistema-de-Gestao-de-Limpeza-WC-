@@ -2437,8 +2437,27 @@ html {
     gap: 8px;
   }
 
-  .report-actions .button {
-    flex: 1 1 0;
-    justify-content: center;
+  .reports .table-responsive {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .reports table {
+    min-width: 1200px;
+  }
+
+  .reports input[type="file"] {
+    max-width: 120px;
+  }
+
+  .reports td,
+  .reports th {
+    white-space: nowrap;
+  }
+
+  .reports .cleaner-actions button,
+  .reports .actions-column button {
+    white-space: nowrap;
   }
 }
