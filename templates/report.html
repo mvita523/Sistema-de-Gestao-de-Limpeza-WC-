@@ -62,20 +62,8 @@
         </label>
 
         <label class="field">
-          <span>Upload de foto</span>
-          <div class="upload-area" id="upload-area" tabindex="0" role="button" aria-label="Área de upload de fotografia">
-            <input type="file" name="foto_reporte" id="foto_reporte" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" required>
-            <div class="upload-content">
-              <span class="upload-icon" aria-hidden="true">📷</span>
-              <span class="upload-title">Adicionar fotografia</span>
-              <span class="upload-hint">Clique ou arraste uma imagem</span>
-            </div>
-            <div class="upload-preview" id="upload-preview" hidden>
-              <img id="preview-image" alt="Pré-visualização" src="">
-              <span class="upload-filename" id="upload-filename"></span>
-            </div>
-          </div>
-          <small>Anexa uma imagem em JPG, PNG ou WEBP.</small>
+          <span>Foto obrigatória *</span>
+          <input type="file" id="photos" name="photos" accept="image/*" required>
         </label>
 
         {{ error_html }}
@@ -130,62 +118,6 @@
             });
           });
           if (radio.checked) card.classList.add('selected');
-        });
-      })();
-
-      (function () {
-        const uploadArea = document.getElementById('upload-area');
-        const fileInput = document.getElementById('foto_reporte');
-        const previewBlock = document.getElementById('upload-preview');
-        const previewImage = document.getElementById('preview-image');
-        const filenameSpan = document.getElementById('upload-filename');
-
-        function handleFile(file) {
-          if (!file) return;
-          filenameSpan.textContent = file.name;
-          const reader = new FileReader();
-          reader.onload = (e) => {
-            previewImage.src = e.target.result;
-            previewBlock.hidden = false;
-          };
-          reader.readAsDataURL(file);
-        }
-
-        uploadArea.addEventListener('click', () => fileInput.click());
-        uploadArea.addEventListener('keydown', (ev) => {
-          if (ev.key === 'Enter' || ev.key === ' ') {
-            ev.preventDefault();
-            fileInput.click();
-          }
-        });
-
-        fileInput.addEventListener('change', (ev) => {
-          handleFile(ev.target.files && ev.target.files[0]);
-        });
-
-        ['dragenter', 'dragover'].forEach((eventName) => {
-          uploadArea.addEventListener(eventName, (ev) => {
-            ev.preventDefault();
-            ev.stopPropagation();
-            uploadArea.classList.add('upload-drag-over');
-          });
-        });
-
-        ['dragleave', 'drop'].forEach((eventName) => {
-          uploadArea.addEventListener(eventName, (ev) => {
-            ev.preventDefault();
-            ev.stopPropagation();
-            uploadArea.classList.remove('upload-drag-over');
-          });
-        });
-
-        uploadArea.addEventListener('drop', (ev) => {
-          const dt = ev.dataTransfer;
-          const files = dt && dt.files;
-          if (files && files.length) {
-            fileInput.files = files;
-            handleFile(files[0]);
-          }
         });
       })();
     </script>

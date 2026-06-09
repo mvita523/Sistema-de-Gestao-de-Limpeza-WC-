@@ -312,6 +312,8 @@ class AppHandler(BaseHTTPRequestHandler):
         try:
             foto_reporte = self.save_uploaded_image(files, "foto_reporte")
         except ValueError as exc:
+            if str(exc) == "missing":
+                return self.show_report(query, "E obrigatorio anexar uma fotografia para submeter um relatorio.")
             message = "Anexa uma foto valida em JPG, PNG ou WEBP."
             if str(exc) == "too_large":
                 message = "A foto deve ter no maximo 5 MB."
