@@ -1,4 +1,26 @@
-# Sistema de Gestao de Limpeza WC
+# 🧼 Sistema de Gestão de Limpeza de WC
+
+Aplicação web completa para **reportar problemas nas casas de banho** de uma instituição, com o ciclo inteiro coberto: o utilizador reporta → a equipa de limpeza resolve → o administrador acompanha os indicadores.
+
+<!-- Adicionar aqui capturas: formulário de reporte, dashboard admin e dashboard da equipa -->
+
+## ✨ Em resumo
+
+| Perfil | O que pode fazer |
+|---|---|
+| **Qualquer pessoa** | Reportar um problema (falta de papel ou sabão, WC sujo, falta de água…) com local, período do dia e foto |
+| **Equipa de limpeza** | Ver os reportes pendentes e marcá-los como "em resolução", "resolvido" ou "falso alerta", com foto de evidência |
+| **Administrador** | Dashboard com gráficos e filtros, gestão de utilizadores, relatórios mensais e exportação para **PDF e Excel** |
+
+**O que este projeto demonstra:**
+- **Base de dados:** PostgreSQL (Supabase) com schema idempotente, índices e estatísticas calculadas em SQL
+- **Segurança:** passwords com PBKDF2-SHA256, tokens assinados (HMAC), proteção CSRF, rate limiting contra spam
+- **Backend em Python** sem frameworks: servidor HTTP próprio, routing, templates e upload de ficheiros
+- **Deploy:** preparado para o Render (Procfile + variáveis de ambiente) e notificações por email (API Brevo)
+
+---
+
+## Detalhes técnicos
 
 Aplicacao Python simples para reportar problemas em WC, gerir reportes no dashboard admin e permitir que a equipa de limpeza marque reportes como resolvidos.
 
